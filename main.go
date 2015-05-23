@@ -13,17 +13,17 @@ type BackoffStrategy func(retry int) time.Duration
 type Client struct {
 	hc http.Client
 
-	Count      int
-	MaxRetries int
-	Backoff    BackoffStrategy
-	KeepLog    bool
+	Concurrency int
+	MaxRetries  int
+	Backoff     BackoffStrategy
+	KeepLog     bool
 
 	sync.Mutex
 	ErrLog []string
 }
 
 func New() *Client {
-	return &Client{Count: 1, MaxRetries: 3, Backoff: DefaultBackoff, ErrLog: []string{}}
+	return &Client{Concurrency: 1, MaxRetries: 3, Backoff: DefaultBackoff, ErrLog: []string{}}
 }
 
 func DefaultBackoff(_ int) time.Duration {
@@ -34,16 +34,38 @@ func ExponentialBackoff(i int) time.Duration {
 	return time.Duration(math.Pow(2, float64(i))) * time.Second
 }
 
-func (c *Client) Get(url string) (resp *http.Response, err error) {
-	for i := 0; i < c.MaxRetries; i++ {
-		resp, err = c.hc.Get(url)
-		if err == nil && resp.StatusCode < 400 {
-			return resp, err
-		}
-		c.log(fmt.Sprintf("GET %s (%d) :: %s", url, i, err.Error()))
-		<-time.Tick(c.Backoff(i))
+func (c *Client) Get(url string) (*http.Response, error) {
+	type result struct {
+		resp *http.Response
+		err  error
 	}
-	return resp, err
+	resultCh := make(chan result)
+
+	for req := 0; req < c.Concurrency; req++ {
+		go func(n int) {
+			resp := &http.Response{}
+			var err error
+
+			for i := 0; i < c.MaxRetries; i++ {
+				resp, err = c.hc.Get(url)
+				if err == nil && resp.StatusCode < 400 {
+					resultCh <- result{resp: resp, err: err}
+				}
+				c.log(fmt.Sprintf("GET %s [req %d::ret %d] :: %s", url, n, i, err.Error()))
+				<-time.Tick(c.Backoff(i))
+			}
+			resultCh <- result{resp: resp, err: err}
+		}(req)
+	}
+
+	for {
+		select {
+		case res := <-resultCh:
+			return res.resp, res.err
+		}
+	}
+
+	return nil, nil
 }
 
 func (c *Client) log(msg string) {

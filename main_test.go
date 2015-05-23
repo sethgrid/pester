@@ -8,6 +8,7 @@ import (
 
 func TestDefaultBackoff(t *testing.T) {
 	c := pester.New()
+	c.Concurrency = 4
 	c.KeepLog = true
 
 	nonExistantURL := "http://localhost:9000/foo"
