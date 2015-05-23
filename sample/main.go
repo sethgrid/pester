@@ -4,6 +4,7 @@ import (
 	"log"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/sethgrid/pester"
 )
@@ -25,6 +26,19 @@ func main() {
 		client.Concurrency = 3
 		client.MaxRetries = 5
 		client.Backoff = pester.ExponentialBackoff
+		client.KeepLog = true
+
+		resp, err := client.Get("http://example.com")
+		if err != nil {
+			log.Println("error GETing example.com", client.LogString())
+		}
+		defer resp.Body.Close()
+		log.Printf("example.com %s", resp.Status)
+	}
+
+	{ // set a custom backoff strategy
+		client := pester.New()
+		client.Backoff = func(retry int) time.Duration { return time.Duration(retry) * time.Minute }
 		client.KeepLog = true
 
 		resp, err := client.Get("http://example.com")

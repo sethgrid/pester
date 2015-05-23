@@ -1,6 +1,6 @@
 # pester
 
-`pester` wraps the standard lib to provide several options to help get your request data.
+`pester` wraps the standard lib's http client to provide several options to increase resiliency in your request. If you experience poor network conditions or requests could experience varied delays, you can now pester the endpoint for data.
 - Send out multiple requests and get the first back (only used for GET calls)
 - Retry on errors
 - Backoff
@@ -13,6 +13,15 @@ Use `pester` where you would use the http client calls. By default, pester will 
    pester.{Get|Post|PostForm|Head|Do}
 */
 resp, err := pester.Get("http://sethammons.com")
+```
+
+### Backoff Strategy
+Provide your own backoff strategy!
+```go
+client := pester.New()
+client.Backoff = func(retry int) time.Duration {
+    return time.Duration(retry) * time.Minute
+}
 ```
 
 ### Complete example
