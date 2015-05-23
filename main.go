@@ -19,7 +19,7 @@ type Client struct {
 	KeepLog     bool
 
 	sync.Mutex
-	ErrLog []string
+	ErrLog []ErrEntry
 }
 
 type result struct {
@@ -27,8 +27,19 @@ type result struct {
 	err  error
 }
 
+type ErrEntry struct {
+	Time    time.Time
+	Method  string
+	URL     string
+	Verb    string
+	Request int
+	Retry   int
+	Err     error
+}
+
 type params struct {
 	method   string
+	verb     string
 	req      *http.Request
 	url      string
 	bodyType string
@@ -37,7 +48,7 @@ type params struct {
 }
 
 func New() *Client {
-	return &Client{Concurrency: 1, MaxRetries: 3, Backoff: DefaultBackoff, ErrLog: []string{}}
+	return &Client{Concurrency: 1, MaxRetries: 3, Backoff: DefaultBackoff, ErrLog: []ErrEntry{}}
 }
 
 type BackoffStrategy func(retry int) time.Duration
@@ -76,7 +87,17 @@ func (c *Client) pester(p params) (*http.Response, error) {
 				if err == nil && resp.StatusCode < 400 {
 					resultCh <- result{resp: resp, err: err}
 				}
-				c.log(fmt.Sprintf("GET %s :: [req %d :: ret %d] :: %s", p.url, n, i, err.Error()))
+
+				c.log(ErrEntry{
+					Time:    time.Now(),
+					Method:  p.method,
+					Verb:    p.verb,
+					URL:     p.url,
+					Request: n,
+					Retry:   i,
+					Err:     err,
+				})
+
 				<-time.Tick(c.Backoff(i))
 			}
 			resultCh <- result{resp: resp, err: err}
@@ -94,29 +115,38 @@ func (c *Client) pester(p params) (*http.Response, error) {
 }
 
 func (c *Client) Do(req *http.Request) (resp *http.Response, err error) {
-	return c.pester(params{method: "Do", req: req})
+	return c.pester(params{method: "Do", req: req, verb: req.Method, url: req.URL.String()})
 }
 
 func (c *Client) Get(url string) (resp *http.Response, err error) {
-	return c.pester(params{method: "Get", url: url})
+	return c.pester(params{method: "Get", url: url, verb: "GET"})
 }
 
 func (c *Client) Head(url string) (resp *http.Response, err error) {
-	return c.pester(params{method: "Head", url: url})
+	return c.pester(params{method: "Head", url: url, verb: "HEAD"})
 }
 
 func (c *Client) Post(url string, bodyType string, body io.Reader) (resp *http.Response, err error) {
-	return c.pester(params{method: "Post", url: url, bodyType: bodyType, body: body})
+	return c.pester(params{method: "Post", url: url, bodyType: bodyType, body: body, verb: "POST"})
 }
 
 func (c *Client) PostForm(url string, data url.Values) (resp *http.Response, err error) {
-	return c.pester(params{method: "PostForm", url: url, data: data})
+	return c.pester(params{method: "PostForm", url: url, data: data, verb: "POST"})
 }
 
-func (c *Client) log(msg string) {
+func (c *Client) LogString() string {
+	var res string
+	for _, e := range c.ErrLog {
+		res += fmt.Sprintf("%d %s [%s] %s request-%d retry-%d error: %s\n",
+			e.Time.Unix(), e.Method, e.Verb, e.URL, e.Request, e.Retry, e.Err)
+	}
+	return res
+}
+
+func (c *Client) log(e ErrEntry) {
 	if c.KeepLog {
 		c.Lock()
-		c.ErrLog = append(c.ErrLog, fmt.Sprintf("%s :: %s", time.Now().String(), msg))
+		c.ErrLog = append(c.ErrLog, e)
 		c.Unlock()
 	}
 }
