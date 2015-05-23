@@ -99,5 +99,4 @@ func TestExponentialBackoff(t *testing.T) {
 
 	// in the event of an error, let's see what the logs were
 	t.Log("\n", c.LogString())
-	t.Fail()
 }

@@ -11,8 +11,10 @@ import (
 )
 
 type Client struct {
+	// wrap it to acces
 	hc http.Client
 
+	// pester specific
 	Concurrency int
 	MaxRetries  int
 	Backoff     BackoffStrategy
@@ -114,6 +116,23 @@ func (c *Client) pester(p params) (*http.Response, error) {
 	return nil, nil
 }
 
+func (c *Client) LogString() string {
+	var res string
+	for _, e := range c.ErrLog {
+		res += fmt.Sprintf("%d %s [%s] %s request-%d retry-%d error: %s\n",
+			e.Time.Unix(), e.Method, e.Verb, e.URL, e.Request, e.Retry, e.Err)
+	}
+	return res
+}
+
+func (c *Client) log(e ErrEntry) {
+	if c.KeepLog {
+		c.Lock()
+		c.ErrLog = append(c.ErrLog, e)
+		c.Unlock()
+	}
+}
+
 func (c *Client) Do(req *http.Request) (resp *http.Response, err error) {
 	return c.pester(params{method: "Do", req: req, verb: req.Method, url: req.URL.String()})
 }
@@ -134,19 +153,31 @@ func (c *Client) PostForm(url string, data url.Values) (resp *http.Response, err
 	return c.pester(params{method: "PostForm", url: url, data: data, verb: "POST"})
 }
 
-func (c *Client) LogString() string {
-	var res string
-	for _, e := range c.ErrLog {
-		res += fmt.Sprintf("%d %s [%s] %s request-%d retry-%d error: %s\n",
-			e.Time.Unix(), e.Method, e.Verb, e.URL, e.Request, e.Retry, e.Err)
-	}
-	return res
+////////////////////////////////////////
+// Provide self-constructing variants //
+////////////////////////////////////////
+
+func Do(req *http.Request) (resp *http.Response, err error) {
+	c := New()
+	return c.Do(req)
 }
 
-func (c *Client) log(e ErrEntry) {
-	if c.KeepLog {
-		c.Lock()
-		c.ErrLog = append(c.ErrLog, e)
-		c.Unlock()
-	}
+func Get(url string) (resp *http.Response, err error) {
+	c := New()
+	return c.Get(url)
+}
+
+func Head(url string) (resp *http.Response, err error) {
+	c := New()
+	return c.Head(url)
+}
+
+func Post(url string, bodyType string, body io.Reader) (resp *http.Response, err error) {
+	c := New()
+	return c.Post(url, bodyType, body)
+}
+
+func PostForm(url string, data url.Values) (resp *http.Response, err error) {
+	c := New()
+	return c.PostForm(url, data)
 }
