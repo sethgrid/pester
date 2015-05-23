@@ -20,12 +20,13 @@ func TestConcurrentRequests(t *testing.T) {
 		t.Fatal("expected to get an error")
 	}
 
+	// in the event of an error, let's see what the logs were
+	t.Log("\n", c.LogString())
+
 	if got, want := len(c.ErrLog), c.Concurrency*c.MaxRetries; got != want {
 		t.Error("got %d attempts, want %d", got, want)
 	}
 
-	// in the event of an error, let's see what the logs were
-	t.Log("\n", c.LogString())
 }
 
 func TestDefaultBackoff(t *testing.T) {
@@ -39,6 +40,13 @@ func TestDefaultBackoff(t *testing.T) {
 	_, err := c.Get(nonExistantURL)
 	if err == nil {
 		t.Fatal("expected to get an error")
+	}
+
+	// in the event of an error, let's see what the logs were
+	t.Log("\n", c.LogString())
+
+	if got, want := c.Concurrency, 1; got != want {
+		t.Error("got %d, want %d for concurrency", got, want)
 	}
 
 	if got, want := len(c.ErrLog), c.MaxRetries; got != want {
@@ -56,8 +64,6 @@ func TestDefaultBackoff(t *testing.T) {
 		}
 	}
 
-	// in the event of an error, let's see what the logs were
-	t.Log("\n", c.LogString())
 }
 
 func TestExponentialBackoff(t *testing.T) {
@@ -74,6 +80,9 @@ func TestExponentialBackoff(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected to get an error")
 	}
+
+	// in the event of an error, let's see what the logs were
+	t.Log("\n", c.LogString())
 
 	if got, want := len(c.ErrLog), c.MaxRetries; got != want {
 		t.Fatalf("got %d errors, want %d", got, want)
@@ -96,7 +105,4 @@ func TestExponentialBackoff(t *testing.T) {
 			t.Errorf("got time %d, want %d (%d greater than start time %d)", got, want, delta, startTime)
 		}
 	}
-
-	// in the event of an error, let's see what the logs were
-	t.Log("\n", c.LogString())
 }

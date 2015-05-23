@@ -9,8 +9,8 @@
 Use `pester` where you would use the http client calls. By default, pester will use a concurrency of 1, and retry the endpoint 3 times with the `DefaultBackoff` strategy of waiting 1 second between retries.
 ```go
 /* swap in replacement, just switch
-   http.{Get|Post|PostForm|Head} to
-   pester.{Get|Post|PostForm|Head}
+   http.{Get|Post|PostForm|Head|Do} to
+   pester.{Get|Post|PostForm|Head|Do}
 */
 resp, err := pester.Get("http://sethammons.com")
 ```
