@@ -25,7 +25,7 @@ func main() {
 		client := pester.New()
 		client.Concurrency = 3
 		client.MaxRetries = 5
-		client.Backoff = pester.ExponentialBackoff
+		client.Backoff = pester.ExponentialJitterBackoff
 		client.KeepLog = true
 
 		resp, err := client.Get("http://example.com")

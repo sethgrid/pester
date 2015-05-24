@@ -66,6 +66,42 @@ func TestDefaultBackoff(t *testing.T) {
 
 }
 
+func TestLinearJitterBackoff(t *testing.T) {
+	t.Parallel()
+	c := pester.New()
+	c.Backoff = pester.LinearJitterBackoff
+	c.KeepLog = true
+
+	nonExistantURL := "http://localhost:9000/foo"
+
+	_, err := c.Get(nonExistantURL)
+	if err == nil {
+		t.Fatal("expected to get an error")
+	}
+
+	// in the event of an error, let's see what the logs were
+	t.Log("\n", c.LogString())
+
+	var startTime int64
+	var delta int64
+	for i, e := range c.ErrLog {
+		switch i {
+		case 0:
+			startTime = e.Time.Unix()
+		case 1:
+			delta += 1
+		case 2:
+			delta += 2
+		case 3:
+			delta += 3
+		}
+
+		if got, want := e.Time.Unix(), startTime+delta; withinEpsilon(got, want, 0.0) {
+			t.Errorf("got time %d, want %d (within epsilon of start time %d)", got, want, startTime)
+		}
+	}
+}
+
 func TestExponentialBackoff(t *testing.T) {
 	t.Parallel()
 
@@ -105,4 +141,11 @@ func TestExponentialBackoff(t *testing.T) {
 			t.Errorf("got time %d, want %d (%d greater than start time %d)", got, want, delta, startTime)
 		}
 	}
+}
+
+func withinEpsilon(got, want int64, epslion float64) bool {
+	if want <= int64(epslion*float64(got)) || want >= int64(epslion*float64(got)) {
+		return false
+	}
+	return true
 }

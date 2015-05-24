@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"math/rand"
 	"net/http"
 	"net/url"
 	"sync"
@@ -87,6 +88,46 @@ func DefaultBackoff(_ int) time.Duration {
 // ExponentialBackoff returns ever increasing backoffs by a power of 2
 func ExponentialBackoff(i int) time.Duration {
 	return time.Duration(math.Pow(2, float64(i))) * time.Second
+}
+
+// ExponentialJitterBackoff returns ever increasing backoffs by a power of 2
+// with +/- 0-33% to prevent sychronized reuqests.
+func ExponentialJitterBackoff(i int) time.Duration {
+	return jitter(int(math.Pow(2, float64(i))))
+}
+
+// LinearBackoff returns increasing durations, each a second longer than the last
+func LinearBackoff(i int) time.Duration {
+	return time.Duration(i) * time.Second
+}
+
+// LinearJitterBackoff returns increasing durations, each a second longer than the last
+// with +/- 0-33% to prevent sychronized reuqests.
+func LinearJitterBackoff(i int) time.Duration {
+	return jitter(i)
+}
+
+// jitter keeps the +/- 0-33% logic in one place
+func jitter(i int) time.Duration {
+	ms := i * 1000
+
+	maxJitter := ms / 3
+
+	rand.Seed(time.Now().Unix())
+	jitter := rand.Intn(maxJitter + 1)
+
+	if rand.Intn(2) == 1 {
+		ms = ms + jitter
+	} else {
+		ms = ms - jitter
+	}
+
+	// a jitter of 0 messes up the time.Tick chan
+	if ms <= 0 {
+		ms = 1
+	}
+
+	return time.Duration(ms) * time.Millisecond
 }
 
 // pester provides all the logic of retries, concurrency, backoff, and logging

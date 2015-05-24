@@ -16,10 +16,17 @@ resp, err := pester.Get("http://sethammons.com")
 ```
 
 ### Backoff Strategy
-Provide your own backoff strategy!
+Provide your own backoff strategy, or use one of the provided built in strategies:
+- `DefaultBackoff`: 1 second
+- `LinearBackoff`: n seconds where n is the retry number
+- `LinearJittertBackoff`: n seconds where n is the retry number, +/- 0-33%
+- `ExponentialBackoff`: n seconds where n is 2^(retry number)
+- `ExponentialJitterBackoff`: n seconds where n is 2^(retry number), +/- 0-33%
+
 ```go
 client := pester.New()
 client.Backoff = func(retry int) time.Duration {
+    // set up something dynamic or use a look up table
     return time.Duration(retry) * time.Minute
 }
 ```
