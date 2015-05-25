@@ -17,6 +17,7 @@ import (
 	"log"
 	"math/rand"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -90,6 +91,39 @@ func main() {
 		log.Printf("Custom backoff :%d %s [request %d, retry %d]\n\n", port, resp.Status, client.SuccessReqNum, client.SuccessRetryNum)
 	}
 
+	log.Println("> pester.Post with defaults")
+	{ // use the pester.Post drop in replacement
+		resp, err := pester.Post(fmt.Sprintf("http://localhost:%d", port), "text/plain", strings.NewReader("data"))
+		if err != nil {
+			log.Fatalf("error POSTing with defaults - %v\n\n", err)
+		}
+		defer resp.Body.Close()
+
+		log.Printf("POST :%d %s\n\n", port, resp.Status)
+	}
+
+	log.Println("> pester.Head with defaults")
+	{ // use the pester.Head drop in replacement
+		resp, err := pester.Head(fmt.Sprintf("http://localhost:%d", port))
+		if err != nil {
+			log.Fatalf("error HEADing with defaults - %v\n\n", err)
+		}
+		defer resp.Body.Close()
+
+		log.Printf("HEAD :%d %s\n\n", port, resp.Status)
+	}
+
+	log.Println("> pester.PostForm with defaults")
+	{ // use the pester.Head drop in replacement
+		resp, err := pester.PostForm(fmt.Sprintf("http://localhost:%d", port), url.Values{"param1": []string{"val1a", "val1b"}, "param2": []string{"val2"}})
+		if err != nil {
+			log.Fatalf("error POSTing a form with defaults - %v\n\n", err)
+		}
+		defer resp.Body.Close()
+
+		log.Printf("POST (form) :%d %s\n\n", port, resp.Status)
+	}
+
 	log.Println("> pester Do with POST")
 	{ // use the pester version of http.Client.Do
 		req, err := http.NewRequest("POST", fmt.Sprintf("http://localhost:%d", port), strings.NewReader("data"))
@@ -104,6 +138,7 @@ func main() {
 
 		log.Printf("Do() POST :%d %s\n\n", port, resp.Status)
 	}
+
 }
 
 // randoHandler will cause random delays and give random status responses

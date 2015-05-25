@@ -160,14 +160,21 @@ func (c *Client) pester(p params) (*http.Response, error) {
 	}
 
 	// if we have a request body, we need to save it for later
+	var originalRequestBody []byte
 	var originalBody []byte
 	var err error
 	if p.req != nil && p.req.Body != nil {
-		originalBody, err = ioutil.ReadAll(p.req.Body)
+		originalRequestBody, err = ioutil.ReadAll(p.req.Body)
 		if err != nil {
 			return &http.Response{}, errors.New("error reading request body")
 		}
 		p.req.Body.Close()
+	}
+	if p.body != nil {
+		originalBody, err = ioutil.ReadAll(p.body)
+		if err != nil {
+			return &http.Response{}, errors.New("error reading body")
+		}
 	}
 
 	for req := 0; req < concurrency; req++ {
@@ -182,8 +189,11 @@ func (c *Client) pester(p params) (*http.Response, error) {
 				default:
 				}
 				// rehydrate the body (it is drained each read)
+				if len(originalRequestBody) > 0 {
+					p.req.Body = ioutil.NopCloser(bytes.NewBuffer(originalRequestBody))
+				}
 				if len(originalBody) > 0 {
-					p.req.Body = ioutil.NopCloser(bytes.NewBuffer(originalBody))
+					p.body = bytes.NewBuffer(originalBody)
 				}
 				// route the calls
 				switch p.method {
