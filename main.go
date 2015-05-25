@@ -4,8 +4,11 @@ package pester
 // allowing you to control concurrency, retries, and a backoff strategy.
 
 import (
+	"bytes"
+	"errors"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"math"
 	"math/rand"
 	"net/http"
@@ -31,6 +34,9 @@ type Client struct {
 	Backoff     BackoffStrategy
 	KeepLog     bool
 
+	SuccessReqNum   int
+	SuccessRetryNum int
+
 	sync.Mutex
 	ErrLog []ErrEntry
 }
@@ -49,8 +55,10 @@ type ErrEntry struct {
 
 // result simplifies the channel communication for concurrent request handling
 type result struct {
-	resp *http.Response
-	err  error
+	resp  *http.Response
+	err   error
+	req   int
+	retry int
 }
 
 // params represents all the params needed to run http client calls and pester errors
@@ -133,6 +141,7 @@ func jitter(i int) time.Duration {
 // pester provides all the logic of retries, concurrency, backoff, and logging
 func (c *Client) pester(p params) (*http.Response, error) {
 	resultCh := make(chan result)
+	finishCh := make(chan struct{})
 
 	// GET calls should be idempotent and can make use
 	// of concurrency. Other verbs can mutate and should not
@@ -150,13 +159,32 @@ func (c *Client) pester(p params) (*http.Response, error) {
 		Timeout:       c.hc.Timeout,
 	}
 
+	// if we have a request body, we need to save it for later
+	var originalBody []byte
+	var err error
+	if p.req != nil && p.req.Body != nil {
+		originalBody, err = ioutil.ReadAll(p.req.Body)
+		if err != nil {
+			return &http.Response{}, errors.New("error reading request body")
+		}
+		p.req.Body.Close()
+	}
+
 	for req := 0; req < concurrency; req++ {
 		go func(n int, p params) {
 			resp := &http.Response{}
 			var err error
 
 			for i := 0; i < c.MaxRetries; i++ {
-
+				select {
+				case <-finishCh:
+					return
+				default:
+				}
+				// rehydrate the body (it is drained each read)
+				if len(originalBody) > 0 {
+					p.req.Body = ioutil.NopCloser(bytes.NewBuffer(originalBody))
+				}
 				// route the calls
 				switch p.method {
 				case "Do":
@@ -173,7 +201,7 @@ func (c *Client) pester(p params) (*http.Response, error) {
 
 				// 200 and 300 level errors are considered success and we are done
 				if err == nil && resp.StatusCode < 400 {
-					resultCh <- result{resp: resp, err: err}
+					resultCh <- result{resp: resp, err: err, req: n, retry: i}
 					return
 				}
 
@@ -187,7 +215,8 @@ func (c *Client) pester(p params) (*http.Response, error) {
 					Err:     err,
 				})
 
-				<-time.Tick(c.Backoff(i))
+				// prevent a 0 from causing the tick to block, pass additional microsecond
+				<-time.Tick(c.Backoff(i) + 1*time.Microsecond)
 			}
 			resultCh <- result{resp: resp, err: err}
 		}(req, p)
@@ -196,6 +225,9 @@ func (c *Client) pester(p params) (*http.Response, error) {
 	for {
 		select {
 		case res := <-resultCh:
+			close(finishCh)
+			c.SuccessReqNum = res.req
+			c.SuccessRetryNum = res.retry
 			return res.resp, res.err
 		}
 	}
