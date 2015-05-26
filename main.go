@@ -1,6 +1,6 @@
 package pester
 
-// pester provides additional resiliency over the stand http client methods by
+// pester provides additional resiliency over the standard http client methods by
 // allowing you to control concurrency, retries, and a backoff strategy.
 
 import (
