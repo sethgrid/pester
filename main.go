@@ -25,7 +25,7 @@ type Client struct {
 
 	Transport     http.RoundTripper
 	CheckRedirect func(req *http.Request, via []*http.Request) error
-	Jar           *http.CookieJar
+	Jar           http.CookieJar
 	Timeout       time.Duration
 
 	// pester specific
