@@ -210,9 +210,12 @@ func (c *Client) pester(p params) (*http.Response, error) {
 				}
 
 				// 200 and 300 level errors are considered success and we are done
-				if err == nil && resp.StatusCode < 400 {
-					resultCh <- result{resp: resp, err: err, req: n, retry: i}
-					return
+				if err == nil {
+					if resp.StatusCode < 400 {
+						resultCh <- result{resp: resp, err: err, req: n, retry: i}
+						return
+					}
+					resp.Body.Close()
 				}
 
 				c.log(ErrEntry{
