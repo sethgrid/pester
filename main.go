@@ -153,10 +153,10 @@ func (c *Client) pester(p params) (*http.Response, error) {
 
 	// re-create the http client so we can leverage the std lib
 	httpClient := http.Client{
-		Transport:     c.hc.Transport,
-		CheckRedirect: c.hc.CheckRedirect,
-		Jar:           c.hc.Jar,
-		Timeout:       c.hc.Timeout,
+		Transport:     c.Transport,
+		CheckRedirect: c.CheckRedirect,
+		Jar:           c.Jar,
+		Timeout:       c.Timeout,
 	}
 
 	// if we have a request body, we need to save it for later
@@ -210,9 +210,12 @@ func (c *Client) pester(p params) (*http.Response, error) {
 				}
 
 				// 200 and 300 level errors are considered success and we are done
-				if err == nil && resp.StatusCode < 400 {
-					resultCh <- result{resp: resp, err: err, req: n, retry: i}
-					return
+				if err == nil {
+					if resp.StatusCode < 400 {
+						resultCh <- result{resp: resp, err: err, req: n, retry: i}
+						return
+					}
+					resp.Body.Close()
 				}
 
 				c.log(ErrEntry{
