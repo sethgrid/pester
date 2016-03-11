@@ -209,8 +209,8 @@ func (c *Client) pester(p params) (*http.Response, error) {
 					resp, err = httpClient.PostForm(p.url, p.data)
 				}
 
-				// 200 and 300 level errors are considered success and we are done
-				if err == nil && resp.StatusCode < 400 {
+				// Only retry on 5xx status codes
+				if err == nil && resp.StatusCode < 500 {
 					resultCh <- result{resp: resp, err: err, req: n, retry: i}
 					return
 				}
