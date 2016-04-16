@@ -24,9 +24,31 @@ func TestConcurrentRequests(t *testing.T) {
 	t.Log("\n", c.LogString())
 
 	if got, want := len(c.ErrLog), c.Concurrency*c.MaxRetries; got != want {
-		t.Error("got %d attempts, want %d", got, want)
+		t.Errorf("got %d attempts, want %d", got, want)
+	}
+}
+
+func TestConcurrentRetry0(t *testing.T) {
+	t.Parallel()
+
+	c := pester.New()
+	c.Concurrency = 4
+	c.MaxRetries = 0
+	c.KeepLog = true
+
+	nonExistantURL := "http://localhost:9000/foo"
+
+	_, err := c.Get(nonExistantURL)
+	if err == nil {
+		t.Fatal("expected to get an error")
 	}
 
+	// in the event of an error, let's see what the logs were
+	t.Log("\n", c.LogString())
+
+	if got, want := len(c.ErrLog), c.Concurrency; got != want {
+		t.Errorf("got %d attempts, want %d", got, want)
+	}
 }
 
 func TestDefaultBackoff(t *testing.T) {
@@ -131,11 +153,11 @@ func TestExponentialBackoff(t *testing.T) {
 		case 0:
 			startTime = e.Time.Unix()
 		case 1:
-			delta += 1
-		case 2:
 			delta += 2
-		case 3:
+		case 2:
 			delta += 4
+		case 3:
+			delta += 8
 		}
 		if got, want := e.Time.Unix(), startTime+delta; got != want {
 			t.Errorf("got time %d, want %d (%d greater than start time %d)", got, want, delta, startTime)

@@ -42,7 +42,8 @@ type Client struct {
 }
 
 // ErrEntry is used to provide the LogString() data and is populated
-// each time an error happens if KeepLog is set
+// each time an error happens if KeepLog is set.
+// ErrEntry.Retry is deprecated in favor of ErrEntry.Attempt
 type ErrEntry struct {
 	Time    time.Time
 	Method  string
@@ -50,6 +51,7 @@ type ErrEntry struct {
 	Verb    string
 	Request int
 	Retry   int
+	Attempt int
 	Err     error
 }
 
@@ -181,8 +183,11 @@ func (c *Client) pester(p params) (*http.Response, error) {
 		go func(n int, p params) {
 			resp := &http.Response{}
 			var err error
-
-			for i := 0; i < c.MaxRetries; i++ {
+			AttemptLimit := c.MaxRetries
+			if AttemptLimit <= 0 {
+				AttemptLimit = 1
+			}
+			for i := 1; i <= AttemptLimit; i++ {
 				select {
 				case <-finishCh:
 					return
@@ -221,7 +226,8 @@ func (c *Client) pester(p params) (*http.Response, error) {
 					Verb:    p.verb,
 					URL:     p.url,
 					Request: n,
-					Retry:   i,
+					Retry:   i + 1, // would remove, but would break backward compatibility
+					Attempt: i,
 					Err:     err,
 				})
 
