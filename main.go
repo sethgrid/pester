@@ -229,6 +229,9 @@ func (c *Client) pester(p params) (*http.Response, error) {
 				// Only retry on 5xx status codes
 				if err == nil && resp.StatusCode < 500 {
 					resultCh <- result{resp: resp, err: err, req: n, retry: i}
+					// close the resp body because the client wont get their own opportunity for it
+					// fixed by github.com/ninhdh0 (thanks mate!)
+					resp.Body.Close()
 					return
 				}
 
