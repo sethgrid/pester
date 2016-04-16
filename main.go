@@ -21,7 +21,7 @@ import (
 // Additionally, Client provides pester specific values for handling resiliency.
 type Client struct {
 	// wrap it to provide access to http built ins
-	hc http.Client
+	hc *http.Client
 
 	Transport     http.RoundTripper
 	CheckRedirect func(req *http.Request, via []*http.Request) error
@@ -82,6 +82,14 @@ func New() *Client {
 		Backoff:     DefaultClient.Backoff,
 		ErrLog:      DefaultClient.ErrLog,
 	}
+}
+
+// NewExtendedClient allows you to pass in an http.Client that is previously set up
+// and extends it to have Pester's features of concurrency and retries.
+func NewExtendedClient(hc *http.Client) *Client {
+	c := New()
+	c.hc = hc
+	return c
 }
 
 // BackoffStrategy is used to determine how long a retry request should wait until attempted
@@ -151,6 +159,10 @@ func (c *Client) pester(p params) (*http.Response, error) {
 	concurrency := c.Concurrency
 	if p.verb != "GET" {
 		concurrency = 1
+	}
+
+	if c.hc == nil {
+		c.hc = http.DefaultClient
 	}
 
 	// re-create the http client so we can leverage the std lib
@@ -257,6 +269,12 @@ func (c *Client) LogString() string {
 			e.Time.Unix(), e.Method, e.Verb, e.URL, e.Request, e.Retry, e.Err)
 	}
 	return res
+}
+
+// EmbedHTTPClient allows you to extend an existing Pester client with an
+// underlying http.Client, such as https://godoc.org/golang.org/x/oauth2/google#DefaultClient
+func (c *Client) EmbedHTTPClient(hc *http.Client) {
+	c.hc = hc
 }
 
 func (c *Client) log(e ErrEntry) {

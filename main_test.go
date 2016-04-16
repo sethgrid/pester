@@ -1,7 +1,14 @@
 package pester_test
 
 import (
+	"fmt"
+	"net"
+	"strconv"
+	"strings"
 	"testing"
+	"time"
+
+	"net/http"
 
 	"github.com/sethgrid/pester"
 )
@@ -162,6 +169,38 @@ func TestExponentialBackoff(t *testing.T) {
 		if got, want := e.Time.Unix(), startTime+delta; got != want {
 			t.Errorf("got time %d, want %d (%d greater than start time %d)", got, want, delta, startTime)
 		}
+	}
+}
+
+func TestEmbeddedClientTimeout(t *testing.T) {
+	// set up a server that will timeout
+	clientTimeout := 100 * time.Millisecond
+	mux := http.NewServeMux()
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		<-time.After(2 * clientTimeout)
+		w.Write([]byte("OK"))
+	})
+	l, err := net.Listen("tcp", ":0")
+	if err != nil {
+		t.Fatal("unable to secure listener", err)
+	}
+	go func() {
+		if err := http.Serve(l, mux); err != nil {
+			t.Fatal("slow-server error", err)
+		}
+	}()
+	port, err := strconv.Atoi(strings.Replace(l.Addr().String(), "[::]:", "", 1))
+	if err != nil {
+		t.Fatal("unable to determine port", err)
+	}
+
+	hc := http.DefaultClient
+	hc.Timeout = clientTimeout
+
+	c := pester.NewExtendedClient(hc)
+	_, err = c.Get(fmt.Sprintf("http://localhost:%d/", port))
+	if err == nil {
+		t.Error("expected a timeout error, did not get it")
 	}
 }
 
