@@ -2,6 +2,7 @@ package pester_test
 
 import (
 	"fmt"
+	"log"
 	"net"
 	"strconv"
 	"strings"
@@ -9,6 +10,7 @@ import (
 	"time"
 
 	"net/http"
+	"net/http/cookiejar"
 
 	"github.com/sethgrid/pester"
 )
@@ -172,26 +174,39 @@ func TestExponentialBackoff(t *testing.T) {
 	}
 }
 
+func TestCookiesJarPersistence(t *testing.T) {
+	// make sure that client properties like .Jar are held onto through the request
+	port, err := cookieServer()
+	if err != nil {
+		t.Fatal("unable to start cookie server", err)
+	}
+
+	jar, err := cookiejar.New(nil)
+	if err != nil {
+		t.Fatal("Cannot create cookiejar", err)
+	}
+
+	c := pester.New()
+	c.Jar = jar
+
+	url := fmt.Sprintf("http://localhost:%d", port)
+
+	response, err := c.Get(url)
+	if err != nil {
+		t.Fatal("unable to GET", err)
+	}
+	response.Body.Close()
+	if !strings.Contains(fmt.Sprintf("%v", jar), "mah-cookie nomnomnom") {
+		t.Error("unable to find expected cookie")
+	}
+}
+
 func TestEmbeddedClientTimeout(t *testing.T) {
 	// set up a server that will timeout
 	clientTimeout := 100 * time.Millisecond
-	mux := http.NewServeMux()
-	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		<-time.After(2 * clientTimeout)
-		w.Write([]byte("OK"))
-	})
-	l, err := net.Listen("tcp", ":0")
+	port, err := timeoutServer(2 * clientTimeout)
 	if err != nil {
-		t.Fatal("unable to secure listener", err)
-	}
-	go func() {
-		if err := http.Serve(l, mux); err != nil {
-			t.Fatal("slow-server error", err)
-		}
-	}()
-	port, err := strconv.Atoi(strings.Replace(l.Addr().String(), "[::]:", "", 1))
-	if err != nil {
-		t.Fatal("unable to determine port", err)
+		t.Fatal("unable to start timeout server", err)
 	}
 
 	hc := http.DefaultClient
@@ -209,4 +224,51 @@ func withinEpsilon(got, want int64, epslion float64) bool {
 		return false
 	}
 	return true
+}
+
+func cookieServer() (int, error) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		cookie := &http.Cookie{}
+		cookie.Name = "mah-cookie"
+		cookie.Value = "nomnomnom"
+		http.SetCookie(w, cookie)
+		w.Write([]byte("OK"))
+	})
+	l, err := net.Listen("tcp", ":0")
+	if err != nil {
+		return -1, fmt.Errorf("unable to secure listener %v", err)
+	}
+	go func() {
+		if err := http.Serve(l, mux); err != nil {
+			log.Fatalf("slow-server error %v", err)
+		}
+	}()
+	port, err := strconv.Atoi(strings.Replace(l.Addr().String(), "[::]:", "", 1))
+	if err != nil {
+		return -1, fmt.Errorf("unable to determine port %v", err)
+	}
+	return port, nil
+}
+
+func timeoutServer(timeout time.Duration) (int, error) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		<-time.After(timeout)
+		w.Write([]byte("OK"))
+	})
+	l, err := net.Listen("tcp", ":0")
+	if err != nil {
+		return -1, fmt.Errorf("unable to secure listener %v", err)
+	}
+	go func() {
+		if err := http.Serve(l, mux); err != nil {
+			log.Fatalf("slow-server error %v", err)
+		}
+	}()
+	port, err := strconv.Atoi(strings.Replace(l.Addr().String(), "[::]:", "", 1))
+	if err != nil {
+		return -1, fmt.Errorf("unable to determine port %v", err)
+	}
+	return port, nil
 }

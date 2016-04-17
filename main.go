@@ -163,6 +163,10 @@ func (c *Client) pester(p params) (*http.Response, error) {
 
 	if c.hc == nil {
 		c.hc = http.DefaultClient
+		c.hc.Transport = c.Transport
+		c.hc.CheckRedirect = c.CheckRedirect
+		c.hc.Jar = c.Jar
+		c.hc.Timeout = c.Timeout
 	}
 
 	// re-create the http client so we can leverage the std lib
