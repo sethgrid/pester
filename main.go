@@ -280,6 +280,8 @@ func (c *Client) pester(p params) (*http.Response, error) {
 					resultCh <- res
 				} else if res.resp != nil {
 					// we only return one result to the caller; close all other response bodies that come back
+					// drain the body before close as to not prevent keepalive. see https://gist.github.com/mholt/eba0f2cc96658be0f717
+					io.Copy(ioutil.Discard, res.resp.Body)
 					res.resp.Body.Close()
 				}
 			}
