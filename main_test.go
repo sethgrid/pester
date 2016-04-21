@@ -37,7 +37,7 @@ func TestConcurrentRequests(t *testing.T) {
 	}
 }
 
-func TestConcurrentRetry0(t *testing.T) {
+func TestConcurrent4Retry0(t *testing.T) {
 	t.Parallel()
 
 	c := pester.New()

@@ -111,6 +111,16 @@ Output:
 */
 ```
 
+### Tests
+
+You can run tests in the root directory with `$ go test`. There is a benchmark-like test available with `$ cd benchmarks; go test`.
+You can see `pester` in action with `$ cd sample; go run main.go`.
+
+For watching open file descriptors, you can run `watch "lsof -i -P | grep main"` if you started the app with `go run main.go`.
+I did this for watching for FD leaks. My method was to alter `sample/main.go` to only run one case (`pester.Get with set backoff stategy, concurrency and retries increased`)
+and adding a sleep after the result came back. This let me verify if FDs were getting left open when they should have closed. If you know a better way, let me know!
+I was able to see that FDs are now closing when they should :)
+
 ![Are we there yet?](http://butchbellah.com/wp-content/uploads/2012/06/Are-We-There-Yet.jpg)
 
 Are we there yet? Are we there yet? Are we there yet? Are we there yet? ...

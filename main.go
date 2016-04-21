@@ -151,6 +151,7 @@ func jitter(i int) time.Duration {
 // pester provides all the logic of retries, concurrency, backoff, and logging
 func (c *Client) pester(p params) (*http.Response, error) {
 	resultCh := make(chan result)
+	multiplexCh := make(chan result)
 	finishCh := make(chan struct{})
 
 	// GET calls should be idempotent and can make use
@@ -197,7 +198,6 @@ func (c *Client) pester(p params) (*http.Response, error) {
 
 	for req := 0; req < concurrency; req++ {
 		go func(n int, p params) {
-			resp := &http.Response{}
 			var err error
 			AttemptLimit := c.MaxRetries
 			if AttemptLimit <= 0 {
@@ -209,6 +209,8 @@ func (c *Client) pester(p params) (*http.Response, error) {
 					return
 				default:
 				}
+				resp := &http.Response{}
+
 				// rehydrate the body (it is drained each read)
 				if len(originalRequestBody) > 0 {
 					p.req.Body = ioutil.NopCloser(bytes.NewBuffer(originalRequestBody))
@@ -216,6 +218,7 @@ func (c *Client) pester(p params) (*http.Response, error) {
 				if len(originalBody) > 0 {
 					p.body = bytes.NewBuffer(originalBody)
 				}
+
 				// route the calls
 				switch p.method {
 				case "Do":
@@ -230,12 +233,10 @@ func (c *Client) pester(p params) (*http.Response, error) {
 					resp, err = httpClient.PostForm(p.url, p.data)
 				}
 
-				// Only retry on 5xx status codes
+				// Early return if we have a valid result
+				// Only retry (ie, continue the loop) on 5xx status codes
 				if err == nil && resp.StatusCode < 500 {
-					resultCh <- result{resp: resp, err: err, req: n, retry: i}
-					// close the resp body because the client wont get their own opportunity for it
-					// fixed by github.com/ninhdh0 (thanks mate!)
-					resp.Body.Close()
+					multiplexCh <- result{resp: resp, err: err, req: n, retry: i}
 					return
 				}
 
@@ -250,21 +251,46 @@ func (c *Client) pester(p params) (*http.Response, error) {
 					Err:     err,
 				})
 
+				// if it is the last iteration, grab the result (which is an error at this point)
+				if i == AttemptLimit {
+					multiplexCh <- result{resp: resp, err: err}
+					return
+				}
+
+				// if we are retrying, we should close this response body to free the fd
+				if resp != nil {
+					resp.Body.Close()
+				}
+
 				// prevent a 0 from causing the tick to block, pass additional microsecond
 				<-time.Tick(c.Backoff(i) + 1*time.Microsecond)
 			}
-			resultCh <- result{resp: resp, err: err}
 		}(req, p)
 	}
 
-	for {
-		select {
-		case res := <-resultCh:
-			close(finishCh)
-			c.SuccessReqNum = res.req
-			c.SuccessRetryNum = res.retry
-			return res.resp, res.err
+	// spin off the go routine so it can continually listen in on late results and close the response bodies
+	go func() {
+		gotFirstResult := false
+		for {
+			select {
+			case res := <-multiplexCh:
+				if !gotFirstResult {
+					gotFirstResult = true
+					close(finishCh)
+					resultCh <- res
+				} else if res.resp != nil {
+					// we only return one result to the caller; close all other response bodies that come back
+					res.resp.Body.Close()
+				}
+			}
 		}
+	}()
+
+	select {
+	case res := <-resultCh:
+		c.SuccessReqNum = res.req
+		c.SuccessRetryNum = res.retry
+		return res.resp, res.err
 	}
 }
 
