@@ -19,7 +19,7 @@ func TestConcurrentRequests(t *testing.T) {
 	t.Parallel()
 
 	c := pester.New()
-	c.Concurrency = 4
+	c.Concurrency = 3
 	c.KeepLog = true
 
 	nonExistantURL := "http://localhost:9000/foo"
@@ -32,16 +32,16 @@ func TestConcurrentRequests(t *testing.T) {
 	// in the event of an error, let's see what the logs were
 	t.Log("\n", c.LogString())
 
-	if got, want := len(c.ErrLog), c.Concurrency*c.MaxRetries; got != want {
+	if got, want := c.LogErrCount(), c.Concurrency*c.MaxRetries; got != want {
 		t.Errorf("got %d attempts, want %d", got, want)
 	}
 }
 
-func TestConcurrent4Retry0(t *testing.T) {
+func TestConcurrent2Retry0(t *testing.T) {
 	t.Parallel()
 
 	c := pester.New()
-	c.Concurrency = 4
+	c.Concurrency = 2
 	c.MaxRetries = 0
 	c.KeepLog = true
 
@@ -55,7 +55,7 @@ func TestConcurrent4Retry0(t *testing.T) {
 	// in the event of an error, let's see what the logs were
 	t.Log("\n", c.LogString())
 
-	if got, want := len(c.ErrLog), c.Concurrency; got != want {
+	if got, want := c.LogErrCount(), c.Concurrency; got != want {
 		t.Errorf("got %d attempts, want %d", got, want)
 	}
 }
@@ -80,7 +80,7 @@ func TestDefaultBackoff(t *testing.T) {
 		t.Error("got %d, want %d for concurrency", got, want)
 	}
 
-	if got, want := len(c.ErrLog), c.MaxRetries; got != want {
+	if got, want := c.LogErrCount(), c.MaxRetries; got != want {
 		t.Fatalf("got %d errors, want %d", got, want)
 	}
 
@@ -151,7 +151,7 @@ func TestExponentialBackoff(t *testing.T) {
 	// in the event of an error, let's see what the logs were
 	t.Log("\n", c.LogString())
 
-	if got, want := len(c.ErrLog), c.MaxRetries; got != want {
+	if got, want := c.LogErrCount(), c.MaxRetries; got != want {
 		t.Fatalf("got %d errors, want %d", got, want)
 	}
 

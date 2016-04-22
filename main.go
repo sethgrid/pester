@@ -163,7 +163,7 @@ func (c *Client) pester(p params) (*http.Response, error) {
 	}
 
 	if c.hc == nil {
-		c.hc = http.DefaultClient
+		c.hc = &http.Client{}
 		c.hc.Transport = c.Transport
 		c.hc.CheckRedirect = c.CheckRedirect
 		c.hc.Jar = c.Jar
@@ -298,12 +298,21 @@ func (c *Client) pester(p params) (*http.Response, error) {
 
 // LogString provides a string representation of the errors the client has seen
 func (c *Client) LogString() string {
+	c.Lock()
+	defer c.Unlock()
 	var res string
 	for _, e := range c.ErrLog {
 		res += fmt.Sprintf("%d %s [%s] %s request-%d retry-%d error: %s\n",
 			e.Time.Unix(), e.Method, e.Verb, e.URL, e.Request, e.Retry, e.Err)
 	}
 	return res
+}
+
+// LogErrCount is a helper method used primarily for test validation
+func (c *Client) LogErrCount() int {
+	c.Lock()
+	defer c.Unlock()
+	return len(c.ErrLog)
 }
 
 // EmbedHTTPClient allows you to extend an existing Pester client with an
