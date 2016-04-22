@@ -28,6 +28,7 @@ func TestConcurrentRequests(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected to get an error")
 	}
+	c.Wait()
 
 	// in the event of an error, let's see what the logs were
 	t.Log("\n", c.LogString())
@@ -51,6 +52,7 @@ func TestConcurrent2Retry0(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected to get an error")
 	}
+	c.Wait()
 
 	// in the event of an error, let's see what the logs were
 	t.Log("\n", c.LogString())
@@ -72,12 +74,13 @@ func TestDefaultBackoff(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected to get an error")
 	}
+	c.Wait()
 
 	// in the event of an error, let's see what the logs were
 	t.Log("\n", c.LogString())
 
 	if got, want := c.Concurrency, 1; got != want {
-		t.Error("got %d, want %d for concurrency", got, want)
+		t.Errorf("got %d, want %d for concurrency", got, want)
 	}
 
 	if got, want := c.LogErrCount(), c.MaxRetries; got != want {
@@ -109,6 +112,7 @@ func TestLinearJitterBackoff(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected to get an error")
 	}
+	c.Wait()
 
 	// in the event of an error, let's see what the logs were
 	t.Log("\n", c.LogString())
@@ -147,6 +151,7 @@ func TestExponentialBackoff(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected to get an error")
 	}
+	c.Wait()
 
 	// in the event of an error, let's see what the logs were
 	t.Log("\n", c.LogString())
@@ -195,6 +200,8 @@ func TestCookiesJarPersistence(t *testing.T) {
 	if err != nil {
 		t.Fatal("unable to GET", err)
 	}
+	c.Wait()
+
 	response.Body.Close()
 	if !strings.Contains(fmt.Sprintf("%v", jar), "mah-cookie nomnomnom") {
 		t.Error("unable to find expected cookie")

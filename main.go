@@ -37,6 +37,8 @@ type Client struct {
 	SuccessReqNum   int
 	SuccessRetryNum int
 
+	wg *sync.WaitGroup
+
 	sync.Mutex
 	ErrLog []ErrEntry
 }
@@ -81,6 +83,7 @@ func New() *Client {
 		MaxRetries:  DefaultClient.MaxRetries,
 		Backoff:     DefaultClient.Backoff,
 		ErrLog:      DefaultClient.ErrLog,
+		wg:          &sync.WaitGroup{},
 	}
 }
 
@@ -148,6 +151,12 @@ func jitter(i int) time.Duration {
 	return time.Duration(ms) * time.Millisecond
 }
 
+// Wait blocks until all pester requests have returned
+// Probably not that useful outside of testing.
+func (c *Client) Wait() {
+	c.wg.Wait()
+}
+
 // pester provides all the logic of retries, concurrency, backoff, and logging
 func (c *Client) pester(p params) (*http.Response, error) {
 	resultCh := make(chan result)
@@ -196,14 +205,20 @@ func (c *Client) pester(p params) (*http.Response, error) {
 		}
 	}
 
+	AttemptLimit := c.MaxRetries
+	if AttemptLimit <= 0 {
+		AttemptLimit = 1
+	}
+
 	for req := 0; req < concurrency; req++ {
+		c.wg.Add(1)
 		go func(n int, p params) {
+			defer c.wg.Done()
+
 			var err error
-			AttemptLimit := c.MaxRetries
-			if AttemptLimit <= 0 {
-				AttemptLimit = 1
-			}
 			for i := 1; i <= AttemptLimit; i++ {
+				c.wg.Add(1)
+				defer c.wg.Done()
 				select {
 				case <-finishCh:
 					return
