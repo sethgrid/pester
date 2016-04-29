@@ -4,8 +4,10 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -223,6 +225,47 @@ func TestEmbeddedClientTimeout(t *testing.T) {
 	_, err = c.Get(fmt.Sprintf("http://localhost:%d/", port))
 	if err == nil {
 		t.Error("expected a timeout error, did not get it")
+	}
+}
+
+func TestConcurrentRequestsNotRacyAndDontLeak(t *testing.T) {
+	goroStart := runtime.NumGoroutine()
+	c := pester.New()
+	nonExistantURL := "http://localhost:9000/foo"
+	conc := 5
+	errCh := make(chan error, conc)
+
+	wg := &sync.WaitGroup{}
+	block := make(chan struct{})
+	for i := 0; i < conc; i++ {
+		wg.Add(1)
+		go func() {
+			<-block
+			defer wg.Done()
+			resp, err := c.Get(nonExistantURL)
+			if err == nil {
+				errCh <- fmt.Errorf("should have had an error getting %s", nonExistantURL)
+				return
+			}
+			if resp != nil {
+				resp.Body.Close()
+			}
+		}()
+	}
+	close(block)
+	go func() {
+		select {
+		case err := <-errCh:
+			t.Fatal(err)
+		}
+	}()
+	wg.Wait()
+
+	// give background goroutines time to clean up
+	<-time.After(250 * time.Millisecond)
+	goroEnd := runtime.NumGoroutine()
+	if goroStart != goroEnd {
+		t.Errorf("got %d running goroutines, want %d", goroEnd, goroStart)
 	}
 }
 

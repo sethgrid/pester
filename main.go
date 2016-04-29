@@ -163,6 +163,16 @@ func (c *Client) pester(p params) (*http.Response, error) {
 	multiplexCh := make(chan result)
 	finishCh := make(chan struct{})
 
+	// track all requests that go out so we can close the late listener routine that closes late incoming response bodies
+	totalSentRequests := &sync.WaitGroup{}
+	totalSentRequests.Add(1)
+	defer totalSentRequests.Done()
+	allRequestsBackCh := make(chan struct{})
+	go func() {
+		totalSentRequests.Wait()
+		close(allRequestsBackCh)
+	}()
+
 	// GET calls should be idempotent and can make use
 	// of concurrency. Other verbs can mutate and should not
 	// make use of the concurrency feature
@@ -171,6 +181,7 @@ func (c *Client) pester(p params) (*http.Response, error) {
 		concurrency = 1
 	}
 
+	c.Lock()
 	if c.hc == nil {
 		c.hc = &http.Client{}
 		c.hc.Transport = c.Transport
@@ -178,6 +189,7 @@ func (c *Client) pester(p params) (*http.Response, error) {
 		c.hc.Jar = c.Jar
 		c.hc.Timeout = c.Timeout
 	}
+	c.Unlock()
 
 	// re-create the http client so we can leverage the std lib
 	httpClient := http.Client{
@@ -212,8 +224,10 @@ func (c *Client) pester(p params) (*http.Response, error) {
 
 	for req := 0; req < concurrency; req++ {
 		c.wg.Add(1)
+		totalSentRequests.Add(1)
 		go func(n int, p params) {
 			defer c.wg.Done()
+			defer totalSentRequests.Done()
 
 			var err error
 			for i := 1; i <= AttemptLimit; i++ {
@@ -299,12 +313,17 @@ func (c *Client) pester(p params) (*http.Response, error) {
 					io.Copy(ioutil.Discard, res.resp.Body)
 					res.resp.Body.Close()
 				}
+			case <-allRequestsBackCh:
+				// don't leave this goroutine running
+				return
 			}
 		}
 	}()
 
 	select {
 	case res := <-resultCh:
+		c.Lock()
+		defer c.Unlock()
 		c.SuccessReqNum = res.req
 		c.SuccessRetryNum = res.retry
 		return res.resp, res.err
