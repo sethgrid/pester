@@ -212,7 +212,7 @@ func TestCookiesJarPersistence(t *testing.T) {
 
 func TestEmbeddedClientTimeout(t *testing.T) {
 	// set up a server that will timeout
-	clientTimeout := 100 * time.Millisecond
+	clientTimeout := 1000 * time.Millisecond
 	port, err := timeoutServer(2 * clientTimeout)
 	if err != nil {
 		t.Fatal("unable to start timeout server", err)
@@ -228,7 +228,54 @@ func TestEmbeddedClientTimeout(t *testing.T) {
 	}
 }
 
-func TestConcurrentRequestsNotRacyAndDontLeak(t *testing.T) {
+func TestConcurrentRequestsNotRacyAndDontLeak_FailedRequest(t *testing.T) {
+	goroStart := runtime.NumGoroutine()
+	c := pester.New()
+	port, err := cookieServer()
+	if err != nil {
+		t.Fatalf("unable to start server %v", err)
+	}
+	goodURL := fmt.Sprintf("http://localhost:%d", port)
+	conc := 5
+	errCh := make(chan error, conc)
+
+	wg := &sync.WaitGroup{}
+	block := make(chan struct{})
+	for i := 0; i < conc; i++ {
+		wg.Add(1)
+		go func() {
+			<-block
+			defer wg.Done()
+			resp, err := c.Get(goodURL)
+			if err != nil {
+				errCh <- fmt.Errorf("got unexpected error getting %s, %v", goodURL, err)
+				return
+			}
+			if resp != nil {
+				resp.Body.Close()
+			}
+		}()
+	}
+	close(block)
+	go func() {
+		select {
+		case err := <-errCh:
+			t.Fatal(err)
+		case <-time.After(250 * time.Millisecond):
+			return
+		}
+	}()
+	wg.Wait()
+
+	// give background goroutines time to clean up
+	<-time.After(1000 * time.Millisecond)
+	goroEnd := runtime.NumGoroutine()
+	if goroStart != goroEnd {
+		t.Errorf("got %d running goroutines, want %d", goroEnd, goroStart)
+	}
+}
+
+func TestConcurrentRequestsNotRacyAndDontLeak_SuccessfulRequest(t *testing.T) {
 	goroStart := runtime.NumGoroutine()
 	c := pester.New()
 	nonExistantURL := "http://localhost:9000/foo"
@@ -257,6 +304,8 @@ func TestConcurrentRequestsNotRacyAndDontLeak(t *testing.T) {
 		select {
 		case err := <-errCh:
 			t.Fatal(err)
+		case <-time.After(250 * time.Millisecond):
+			return
 		}
 	}()
 	wg.Wait()
