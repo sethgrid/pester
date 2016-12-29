@@ -270,7 +270,7 @@ func TestConcurrentRequestsNotRacyAndDontLeak_FailedRequest(t *testing.T) {
 	// give background goroutines time to clean up
 	<-time.After(1000 * time.Millisecond)
 	goroEnd := runtime.NumGoroutine()
-	if goroStart != goroEnd {
+	if goroStart < goroEnd {
 		t.Errorf("got %d running goroutines, want %d", goroEnd, goroStart)
 	}
 }
@@ -311,9 +311,9 @@ func TestConcurrentRequestsNotRacyAndDontLeak_SuccessfulRequest(t *testing.T) {
 	wg.Wait()
 
 	// give background goroutines time to clean up
-	<-time.After(250 * time.Millisecond)
+	<-time.After(1000 * time.Millisecond)
 	goroEnd := runtime.NumGoroutine()
-	if goroStart != goroEnd {
+	if goroStart < goroEnd {
 		t.Errorf("got %d running goroutines, want %d", goroEnd, goroStart)
 	}
 }
