@@ -13,6 +13,7 @@ import (
 
 	"net/http"
 	"net/http/cookiejar"
+	"errors"
 )
 
 func TestConcurrentRequests(t *testing.T) {
@@ -98,6 +99,29 @@ func TestDefaultBackoff(t *testing.T) {
 		}
 	}
 
+}
+
+func TestFormatError(t *testing.T) {
+	t.Parallel()
+	err := errors.New("Get http://localhost:9000/foo: dial tcp 127.0.0.1:9000: getsockopt: connection refused")
+	expected := "1491271979 Get [GET] http://localhost:9000/foo request-0 retry-2 error: "+ err.Error()+"\n"
+
+	e := ErrEntry{
+		Time: time.Unix(1491271979, 0),
+		Method: "Get",
+		URL: "http://localhost:9000/foo",
+		Verb: http.MethodGet,
+		Request: 0,
+		Retry: 2,
+		Attempt: 1,
+		Err: err,
+	}
+
+	c := New()
+	formatted := c.FormatError(e)
+	if strings.Compare(expected, formatted) != 0 {
+		t.Errorf("\nExpected:\n%s\nGot:\n%s", expected, formatted)
+	}
 }
 
 func TestCustomLogHook(t *testing.T) {
