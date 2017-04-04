@@ -1,4 +1,4 @@
-package pester_test
+package pester
 
 import (
 	"fmt"
@@ -13,14 +13,12 @@ import (
 
 	"net/http"
 	"net/http/cookiejar"
-
-	"github.com/sethgrid/pester"
 )
 
 func TestConcurrentRequests(t *testing.T) {
 	t.Parallel()
 
-	c := pester.New()
+	c := New()
 	c.Concurrency = 3
 	c.KeepLog = true
 
@@ -43,7 +41,7 @@ func TestConcurrentRequests(t *testing.T) {
 func TestConcurrent2Retry0(t *testing.T) {
 	t.Parallel()
 
-	c := pester.New()
+	c := New()
 	c.Concurrency = 2
 	c.MaxRetries = 0
 	c.KeepLog = true
@@ -67,7 +65,7 @@ func TestConcurrent2Retry0(t *testing.T) {
 func TestDefaultBackoff(t *testing.T) {
 	t.Parallel()
 
-	c := pester.New()
+	c := New()
 	c.KeepLog = true
 
 	nonExistantURL := "http://localhost:9000/foo"
@@ -104,8 +102,8 @@ func TestDefaultBackoff(t *testing.T) {
 
 func TestLinearJitterBackoff(t *testing.T) {
 	t.Parallel()
-	c := pester.New()
-	c.Backoff = pester.LinearJitterBackoff
+	c := New()
+	c.Backoff = LinearJitterBackoff
 	c.KeepLog = true
 
 	nonExistantURL := "http://localhost:9000/foo"
@@ -142,9 +140,9 @@ func TestLinearJitterBackoff(t *testing.T) {
 func TestExponentialBackoff(t *testing.T) {
 	t.Parallel()
 
-	c := pester.New()
+	c := New()
 	c.MaxRetries = 4
-	c.Backoff = pester.ExponentialBackoff
+	c.Backoff = ExponentialBackoff
 	c.KeepLog = true
 
 	nonExistantURL := "http://localhost:9000/foo"
@@ -193,7 +191,7 @@ func TestCookiesJarPersistence(t *testing.T) {
 		t.Fatal("Cannot create cookiejar", err)
 	}
 
-	c := pester.New()
+	c := New()
 	c.Jar = jar
 
 	url := fmt.Sprintf("http://localhost:%d", port)
@@ -221,7 +219,7 @@ func TestEmbeddedClientTimeout(t *testing.T) {
 	hc := http.DefaultClient
 	hc.Timeout = clientTimeout
 
-	c := pester.NewExtendedClient(hc)
+	c := NewExtendedClient(hc)
 	_, err = c.Get(fmt.Sprintf("http://localhost:%d/", port))
 	if err == nil {
 		t.Error("expected a timeout error, did not get it")
@@ -230,7 +228,7 @@ func TestEmbeddedClientTimeout(t *testing.T) {
 
 func TestConcurrentRequestsNotRacyAndDontLeak_FailedRequest(t *testing.T) {
 	goroStart := runtime.NumGoroutine()
-	c := pester.New()
+	c := New()
 	port, err := cookieServer()
 	if err != nil {
 		t.Fatalf("unable to start server %v", err)
@@ -277,7 +275,7 @@ func TestConcurrentRequestsNotRacyAndDontLeak_FailedRequest(t *testing.T) {
 
 func TestConcurrentRequestsNotRacyAndDontLeak_SuccessfulRequest(t *testing.T) {
 	goroStart := runtime.NumGoroutine()
-	c := pester.New()
+	c := New()
 	nonExistantURL := "http://localhost:9000/foo"
 	conc := 5
 	errCh := make(chan error, conc)
@@ -353,7 +351,6 @@ func cookieServer() (int, error) {
 	if err != nil {
 		return -1, fmt.Errorf("unable to determine port %v", err)
 	}
-
 	return port, nil
 }
 
@@ -382,5 +379,6 @@ func timeoutServer(timeout time.Duration) (int, error) {
 	if err != nil {
 		return -1, fmt.Errorf("unable to determine port %v", err)
 	}
+
 	return port, nil
 }
