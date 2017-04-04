@@ -343,10 +343,17 @@ func cookieServer() (int, error) {
 			log.Fatalf("slow-server error %v", err)
 		}
 	}()
-	port, err := strconv.Atoi(strings.Replace(l.Addr().String(), "[::]:", "", 1))
+
+	var port int
+	_, sport, err := net.SplitHostPort(l.Addr().String())
+	if err == nil {
+		port, err = strconv.Atoi(sport)
+	}
+
 	if err != nil {
 		return -1, fmt.Errorf("unable to determine port %v", err)
 	}
+
 	return port, nil
 }
 
@@ -365,7 +372,13 @@ func timeoutServer(timeout time.Duration) (int, error) {
 			log.Fatalf("slow-server error %v", err)
 		}
 	}()
-	port, err := strconv.Atoi(strings.Replace(l.Addr().String(), "[::]:", "", 1))
+
+	var port int
+	_, sport, err := net.SplitHostPort(l.Addr().String())
+	if err == nil {
+		port, err = strconv.Atoi(sport)
+	}
+
 	if err != nil {
 		return -1, fmt.Errorf("unable to determine port %v", err)
 	}
