@@ -100,6 +100,63 @@ func TestDefaultBackoff(t *testing.T) {
 
 }
 
+func TestCustomLogHook(t *testing.T) {
+	t.Parallel()
+
+	expectedRetries := 5
+	errorLines := []ErrEntry{}
+
+	c := New()
+	//c.KeepLog = true
+	c.MaxRetries = expectedRetries
+	c.Backoff = func(_ int) time.Duration {
+		return 10 * time.Microsecond
+	}
+
+	c.LogHook = func(e ErrEntry) {
+		errorLines = append(errorLines, e)
+	}
+
+	nonExistantURL := "http://localhost:9000/foo"
+
+	_, err := c.Get(nonExistantURL)
+	if err == nil {
+		t.Fatal("expected to get an error")
+	}
+	c.Wait()
+
+	// in the event of an error, let's see what the logs were
+	if expectedRetries != len(errorLines) {
+		t.Errorf("Expected %d lines to be emitted. Got %d", expectedRetries, errorLines)
+	}
+}
+
+func TestDefaultLogHook(t *testing.T) {
+	t.Parallel()
+
+	errorLines := 0
+
+	c := New()
+	//c.KeepLog = true
+	c.MaxRetries = 5
+	c.Backoff = func(_ int) time.Duration {
+		return 10 * time.Microsecond
+	}
+
+	nonExistantURL := "http://localhost:9000/foo"
+
+	_, err := c.Get(nonExistantURL)
+	if err == nil {
+		t.Fatal("expected to get an error")
+	}
+	c.Wait()
+
+	// in the event of an error, let's see what the logs were
+	if errorLines != 0 {
+		t.Errorf("Expected 0 lines to be emitted. Got %d", errorLines)
+	}
+}
+
 func TestLinearJitterBackoff(t *testing.T) {
 	t.Parallel()
 	c := New()
