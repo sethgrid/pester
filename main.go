@@ -33,6 +33,7 @@ type Client struct {
 	MaxRetries  int
 	Backoff     BackoffStrategy
 	KeepLog     bool
+	LogHook     LogHook
 
 	SuccessReqNum   int
 	SuccessRetryNum int
@@ -94,6 +95,10 @@ func NewExtendedClient(hc *http.Client) *Client {
 	c.hc = hc
 	return c
 }
+
+// PrintErrStrategy is used to log attempts as they happen.
+// You know, more visible
+type LogHook func(e ErrEntry)
 
 // BackoffStrategy is used to determine how long a retry request should wait until attempted
 type BackoffStrategy func(retry int) time.Duration
@@ -336,10 +341,15 @@ func (c *Client) LogString() string {
 	defer c.Unlock()
 	var res string
 	for _, e := range c.ErrLog {
-		res += fmt.Sprintf("%d %s [%s] %s request-%d retry-%d error: %s\n",
-			e.Time.Unix(), e.Method, e.Verb, e.URL, e.Request, e.Retry, e.Err)
+		res += c.FormatError(e)
 	}
 	return res
+}
+
+// Format the Error to human readable string
+func (c *Client) FormatError(e ErrEntry) string {
+	return fmt.Sprintf("%d %s [%s] %s request-%d retry-%d error: %s\n",
+		e.Time.Unix(), e.Method, e.Verb, e.URL, e.Request, e.Retry, e.Err)
 }
 
 // LogErrCount is a helper method used primarily for test validation
@@ -358,8 +368,12 @@ func (c *Client) EmbedHTTPClient(hc *http.Client) {
 func (c *Client) log(e ErrEntry) {
 	if c.KeepLog {
 		c.Lock()
+		defer c.Unlock()
 		c.ErrLog = append(c.ErrLog, e)
-		c.Unlock()
+	} else if c.LogHook != nil {
+		// NOTE: There is a possibility that Log Printing hook slows it down.
+		// but the consumer can always do the Job in a go-routine.
+		c.LogHook(e)
 	}
 }
 
