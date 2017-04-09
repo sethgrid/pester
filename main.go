@@ -207,7 +207,7 @@ func (c *Client) pester(p params) (*http.Response, error) {
 	httpClient := http.Client{
 		Transport:     c.hc.Transport,
 		CheckRedirect: c.hc.CheckRedirect,
-		Jar:           c.hc.Jar,
+		Jar:           c.Jar,
 		Timeout:       c.hc.Timeout,
 	}
 
