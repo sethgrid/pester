@@ -152,7 +152,7 @@ func TestCustomLogHook(t *testing.T) {
 
 	// in the event of an error, let's see what the logs were
 	if expectedRetries != len(errorLines) {
-		t.Errorf("Expected %d lines to be emitted. Got %d", expectedRetries, errorLines)
+		t.Errorf("Expected %d lines to be emitted. Got %d", expectedRetries, len(errorLines))
 	}
 }
 
