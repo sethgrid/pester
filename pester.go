@@ -277,8 +277,9 @@ func (c *Client) pester(p params) (*http.Response, error) {
 				}
 
 				// Early return if we have a valid result
-				// Only retry (ie, continue the loop) on 5xx status codes
-				if err == nil && resp.StatusCode < 500 {
+				// Only retry (ie, continue the loop) on 5xx status codes and 429
+
+				if err == nil && resp.StatusCode < 500 && resp.StatusCode != 429 {
 					multiplexCh <- result{resp: resp, err: err, req: n, retry: i}
 					return
 				}
