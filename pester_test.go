@@ -40,7 +40,7 @@ func TestConcurrentRequests(t *testing.T) {
 	}
 }
 
-func TestConcurrentRequestsWith429(t *testing.T) {
+func TestConcurrentRequestsWith429DefaultClient(t *testing.T) {
 	t.Parallel()
 
 	c := New()
@@ -66,7 +66,136 @@ func TestConcurrentRequestsWith429(t *testing.T) {
 	// in the event of an error, let's see what the logs were
 	t.Log("\n", c.LogString())
 
+	if got, want := c.LogErrCount(), 0; got != want {
+		t.Errorf("got %d attempts, want %d", got, want)
+	}
+}
+
+func TestConcurrentRequestsWith400(t *testing.T) {
+	t.Parallel()
+
+	c := New()
+	c.Concurrency = 3
+	c.KeepLog = true
+	c.SetRetryOnHTTP429(true)
+
+	port, err := serverWith400()
+	if err != nil {
+		t.Fatal("unable to start server", err)
+	}
+
+	url := fmt.Sprintf("http://localhost:%d", port)
+
+	response, err := c.Get(url)
+	if err != nil {
+		t.Fatal("unable to GET", err)
+	}
+	c.Wait()
+
+	response.Body.Close()
+	c.Wait()
+
+	// in the event of an error, let's see what the logs were
+	t.Log("\n", c.LogString())
+
+	if got, want := c.LogErrCount(), 0; got != want {
+		t.Errorf("got %d attempts, want %d", got, want)
+	}
+}
+
+func TestConcurrentRequestsWith429(t *testing.T) {
+	t.Parallel()
+
+	c := New()
+	c.Concurrency = 3
+	c.KeepLog = true
+	c.SetRetryOnHTTP429(true)
+
+	port, err := serverWith429()
+	if err != nil {
+		t.Fatal("unable to start server", err)
+	}
+
+	url := fmt.Sprintf("http://localhost:%d", port)
+
+	response, err := c.Get(url)
+	if err != nil {
+		t.Fatal("unable to GET", err)
+	}
+	c.Wait()
+
+	response.Body.Close()
+	c.Wait()
+
+	// in the event of an error, let's see what the logs were
+	t.Log("\n", c.LogString())
+
 	if got, want := c.LogErrCount(), c.Concurrency*c.MaxRetries; got != want {
+		t.Errorf("got %d attempts, want %d", got, want)
+	}
+}
+
+func TestMaxRetriesConcurrentRequestsWith429DefaultClient(t *testing.T) {
+	t.Parallel()
+
+	c := New()
+	c.Concurrency = 3
+	c.KeepLog = true
+	c.MaxRetries = 5
+
+	port, err := serverWith429()
+	if err != nil {
+		t.Fatal("unable to start server", err)
+	}
+
+	url := fmt.Sprintf("http://localhost:%d", port)
+
+	response, err := c.Get(url)
+	if err != nil {
+		t.Fatal("unable to GET", err)
+	}
+	c.Wait()
+
+	response.Body.Close()
+	c.Wait()
+
+	// in the event of an error, let's see what the logs were
+	t.Log("\n", c.LogString())
+
+	if got, want := c.LogErrCount(), 0; got != want {
+		t.Errorf("got %d attempts, want %d", got, want)
+	}
+}
+
+func TestMaxRetriesConcurrentRequestsWith400(t *testing.T) {
+	t.Parallel()
+
+	c := New()
+	c.Concurrency = 3
+	c.KeepLog = true
+	c.MaxRetries = 5
+	c.SetRetryOnHTTP429(true)
+
+	port, err := serverWith400()
+	if err != nil {
+		t.Fatal("unable to start server", err)
+	}
+
+	url := fmt.Sprintf("http://localhost:%d", port)
+
+	response, err := c.Get(url)
+	if err != nil {
+		t.Fatal("unable to GET", err)
+	}
+	c.Wait()
+
+	response.Body.Close()
+	c.Wait()
+
+	// in the event of an error, let's see what the logs were
+	t.Log("\n", c.LogString())
+
+	if got, want := c.LogErrCount(), 0; got != want {
 		t.Errorf("got %d attempts, want %d", got, want)
 	}
 }
@@ -78,6 +207,7 @@ func TestMaxRetriesConcurrentRequestsWith429(t *testing.T) {
 	c.Concurrency = 3
 	c.KeepLog = true
 	c.MaxRetries = 5
+	c.SetRetryOnHTTP429(true)
 
 	port, err := serverWith429()
 	if err != nil {
@@ -127,6 +257,36 @@ func TestConcurrent2Retry0(t *testing.T) {
 	}
 }
 
+func TestConcurrent2Retry0for429DefaultClient(t *testing.T) {
+	t.Parallel()
+
+	c := New()
+	c.Concurrency = 2
+	c.MaxRetries = 0
+	c.KeepLog = true
+
+	port, err := serverWith429()
+	if err != nil {
+		t.Fatal("unable to start server", err)
+	}
+
+	url := fmt.Sprintf("http://localhost:%d", port)
+
+	_, getErr := c.Get(url)
+
+	if getErr != nil {
+		t.Fatal("unable to GET", getErr)
+	}
+	c.Wait()
+
+	// in the event of an error, let's see what the logs were
+	t.Log("\n", c.LogString())
+
+	if got, want := c.LogErrCount(), 0; got != want {
+		t.Errorf("got %d attempts, want %d", got, want)
+	}
+}
+
 func TestConcurrent2Retry0for429(t *testing.T) {
 	t.Parallel()
 
@@ -134,6 +294,7 @@ func TestConcurrent2Retry0for429(t *testing.T) {
 	c.Concurrency = 2
 	c.MaxRetries = 0
 	c.KeepLog = true
+	c.SetRetryOnHTTP429(true)
 
 	port, err := serverWith429()
 	if err != nil {
@@ -606,6 +767,36 @@ func serverWith429() (int, error) {
 
 		w.WriteHeader(http.StatusTooManyRequests)
 		w.Write([]byte("429 Too many requests"))
+	})
+	l, err := net.Listen("tcp", ":0")
+	if err != nil {
+		return -1, fmt.Errorf("unable to secure listener %v", err)
+	}
+	go func() {
+		if err := http.Serve(l, mux); err != nil {
+			log.Fatalf("slow-server error %v", err)
+		}
+	}()
+
+	var port int
+	_, sport, err := net.SplitHostPort(l.Addr().String())
+	if err == nil {
+		port, err = strconv.Atoi(sport)
+	}
+
+	if err != nil {
+		return -1, fmt.Errorf("unable to determine port %v", err)
+	}
+
+	return port, nil
+}
+
+func serverWith400() (int, error) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+
+		w.WriteHeader(http.StatusBadRequest)
+		w.Write([]byte("400 Bad Request"))
 	})
 	l, err := net.Listen("tcp", ":0")
 	if err != nil {
