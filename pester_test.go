@@ -2,19 +2,21 @@ package pester
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"net"
+	"net/http"
+	"net/http/cookiejar"
+	"os"
 	"runtime"
+	"runtime/debug"
+	"runtime/pprof"
 	"strconv"
 	"strings"
 	"sync"
 	"testing"
 	"time"
-
-	"errors"
-	"net/http"
-	"net/http/cookiejar"
 )
 
 func TestConcurrentRequests(t *testing.T) {
@@ -517,10 +519,11 @@ func TestExponentialBackoff(t *testing.T) {
 
 func TestCookiesJarPersistence(t *testing.T) {
 	// make sure that client properties like .Jar are held onto through the request
-	port, err := cookieServer()
+	port, closeFn, err := cookieServer()
 	if err != nil {
 		t.Fatal("unable to start cookie server", err)
 	}
+	defer closeFn()
 
 	jar, err := cookiejar.New(nil)
 	if err != nil {
@@ -565,7 +568,7 @@ func TestEmbeddedClientTimeout(t *testing.T) {
 func TestConcurrentRequestsNotRacyAndDontLeak_FailedRequest(t *testing.T) {
 	goroStart := runtime.NumGoroutine()
 	c := New()
-	port, err := cookieServer()
+	port, closeFn, err := cookieServer()
 	if err != nil {
 		t.Fatalf("unable to start server %v", err)
 	}
@@ -601,11 +604,15 @@ func TestConcurrentRequestsNotRacyAndDontLeak_FailedRequest(t *testing.T) {
 	}()
 	wg.Wait()
 
+	// close the slow running cookie server so it does not look like a leaked goroutine
+	closeFn()
 	// give background goroutines time to clean up
-	<-time.After(1000 * time.Millisecond)
+	time.Sleep(500 * time.Millisecond)
 	goroEnd := runtime.NumGoroutine()
 	if goroStart < goroEnd {
 		t.Errorf("got %d running goroutines, want %d", goroEnd, goroStart)
+		debug.PrintStack()
+		pprof.Lookup("goroutine").WriteTo(os.Stdout, 1)
 	}
 }
 
@@ -701,7 +708,14 @@ func withinEpsilon(got, want int64, epslion float64) bool {
 	return true
 }
 
-func cookieServer() (int, error) {
+// noOpClose allows the server start helper (cookieServer) to return a callable function on error cases.
+// This makes it so we have less boiler plate in calling locations for cookieServer (or any server using a similar envoking).
+func noOpClose() error {
+	return nil
+}
+
+// cookieServer returns the port number, a close func to be called when you close the server), and any error while creating the server
+func cookieServer() (int, func() error, error) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		cookie := &http.Cookie{}
@@ -712,13 +726,8 @@ func cookieServer() (int, error) {
 	})
 	l, err := net.Listen("tcp", ":0")
 	if err != nil {
-		return -1, fmt.Errorf("unable to secure listener %v", err)
+		return -1, noOpClose, fmt.Errorf("unable to secure listener %v", err)
 	}
-	go func() {
-		if err := http.Serve(l, mux); err != nil {
-			log.Fatalf("slow-server error %v", err)
-		}
-	}()
 
 	var port int
 	_, sport, err := net.SplitHostPort(l.Addr().String())
@@ -726,10 +735,19 @@ func cookieServer() (int, error) {
 		port, err = strconv.Atoi(sport)
 	}
 
+	// creating a server allows us to close the server during tests
+	srv := &http.Server{Addr: fmt.Sprintf(":%d", port), Handler: mux}
+	go func() {
+		// don't fatal if the error was the soon to be expected ErrServerClosed (because we plan on closing the server in tests)
+		if err := srv.Serve(l); err != nil && err != http.ErrServerClosed {
+			log.Fatalf("slow-server error %v", err)
+		}
+	}()
+
 	if err != nil {
-		return -1, fmt.Errorf("unable to determine port %v", err)
+		return -1, srv.Close, fmt.Errorf("unable to determine port %v", err)
 	}
-	return port, nil
+	return port, srv.Close, nil
 }
 
 func timeoutServer(timeout time.Duration) (int, error) {
