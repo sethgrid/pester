@@ -412,6 +412,48 @@ func TestCustomLogHook(t *testing.T) {
 	}
 }
 
+func TestCustomContextLogHook(t *testing.T) {
+	t.Parallel()
+
+	expectedRetries := 5
+	errorLines := []ErrEntry{}
+	testContextKey := "testContextKey"
+	testContextValue := "testContextValue"
+	ctx := context.WithValue(context.Background(), testContextKey, testContextValue)
+
+	c := New()
+	c.MaxRetries = expectedRetries
+	c.Backoff = func(_ int) time.Duration {
+		return 10 * time.Microsecond
+	}
+
+	c.ContextLogHook = func(ctx context.Context, e ErrEntry) {
+		if testContextValue != ctx.Value(testContextKey) {
+			t.Fatalf("Value %s not found under key %s in context", testContextValue, testContextKey)
+		}
+		errorLines = append(errorLines, e)
+	}
+
+	nonExistantURL := "http://localhost:9000/foo"
+	httpRequest, err := http.NewRequest(http.MethodGet, nonExistantURL, nil)
+	httpRequest = httpRequest.WithContext(ctx)
+
+	if err != nil {
+		t.Fatal("unexpected error on request creation")
+	}
+
+	_, err = c.Do(httpRequest)
+	if err == nil {
+		t.Fatal("expected to get an error")
+	}
+	c.Wait()
+
+	// in the event of an error, let's see what the logs were
+	if expectedRetries != len(errorLines) {
+		t.Errorf("Expected %d lines to be emitted. Got %d", expectedRetries, len(errorLines))
+	}
+}
+
 func TestDefaultLogHook(t *testing.T) {
 	t.Parallel()
 
