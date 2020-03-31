@@ -4,6 +4,7 @@ package pester
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -36,11 +37,12 @@ type Client struct {
 	Timeout       time.Duration
 
 	// pester specific
-	Concurrency int
-	MaxRetries  int
-	Backoff     BackoffStrategy
-	KeepLog     bool
-	LogHook     LogHook
+	Concurrency    int
+	MaxRetries     int
+	Backoff        BackoffStrategy
+	KeepLog        bool
+	LogHook        LogHook
+	ContextLogHook ContextLogHook
 
 	SuccessReqNum   int
 	SuccessRetryNum int
@@ -114,6 +116,9 @@ func NewExtendedClient(hc *http.Client) *Client {
 // LogHook is used to log attempts as they happen. This function is never called,
 // however, if KeepLog is set to true.
 type LogHook func(e ErrEntry)
+
+// ContextLogHook does the same as LogHook but with passed Context
+type ContextLogHook func(ctx context.Context, e ErrEntry)
 
 // BackoffStrategy is used to determine how long a retry request should wait until attempted
 type BackoffStrategy func(retry int) time.Duration
@@ -286,16 +291,23 @@ func (c *Client) pester(p params) (*http.Response, error) {
 					return
 				}
 
-				c.log(ErrEntry{
-					Time:    time.Now(),
-					Method:  p.method,
-					Verb:    p.verb,
-					URL:     p.url,
-					Request: n,
-					Retry:   i + 1, // would remove, but would break backward compatibility
-					Attempt: i,
-					Err:     err,
-				})
+				loggingContext := context.Background()
+				if p.req != nil {
+					loggingContext = p.req.Context()
+				}
+
+				c.log(
+					loggingContext,
+					ErrEntry{
+						Time:    time.Now(),
+						Method:  p.method,
+						Verb:    p.verb,
+						URL:     p.url,
+						Request: n,
+						Retry:   i + 1, // would remove, but would break backward compatibility
+						Attempt: i,
+						Err:     err,
+					})
 
 				// if it is the last iteration, grab the result (which is an error at this point)
 				if i == AttemptLimit {
@@ -387,11 +399,15 @@ func (c *Client) EmbedHTTPClient(hc *http.Client) {
 	c.hc = hc
 }
 
-func (c *Client) log(e ErrEntry) {
+func (c *Client) log(ctx context.Context, e ErrEntry) {
 	if c.KeepLog {
 		c.Lock()
 		defer c.Unlock()
 		c.ErrLog = append(c.ErrLog, e)
+	} else if c.ContextLogHook != nil {
+		// NOTE: There is a possibility that Log Printing hook slows it down.
+		// but the consumer can always do the Job in a go-routine.
+		c.ContextLogHook(ctx, e)
 	} else if c.LogHook != nil {
 		// NOTE: There is a possibility that Log Printing hook slows it down.
 		// but the consumer can always do the Job in a go-routine.
