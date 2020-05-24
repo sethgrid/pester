@@ -16,6 +16,14 @@ import (
 	"time"
 )
 
+const (
+	methodDo       = "Do"
+	methodGet      = "Get"
+	methodHead     = "Head"
+	methodPost     = "Post"
+	methodPostForm = "PostForm"
+)
+
 //ErrUnexpectedMethod occurs when an http.Client method is unable to be mapped from a calling method in the pester client
 var ErrUnexpectedMethod = errors.New("unexpected client method, must be one of Do, Get, Head, Post, or PostFrom")
 
@@ -196,7 +204,7 @@ func (c *Client) pester(p params) (*http.Response, error) {
 	// of concurrency. Other verbs can mutate and should not
 	// make use of the concurrency feature
 	concurrency := c.Concurrency
-	if p.verb != "GET" {
+	if p.verb != http.MethodGet {
 		concurrency = 1
 	}
 
@@ -269,15 +277,15 @@ func (c *Client) pester(p params) (*http.Response, error) {
 				var resp *http.Response
 				// route the calls
 				switch p.method {
-				case "Do":
+				case methodDo:
 					resp, err = httpClient.Do(p.req)
-				case "Get":
+				case methodGet:
 					resp, err = httpClient.Get(p.url)
-				case "Head":
+				case methodHead:
 					resp, err = httpClient.Head(p.url)
-				case "Post":
+				case methodPost:
 					resp, err = httpClient.Post(p.url, p.bodyType, p.body)
-				case "PostForm":
+				case methodPostForm:
 					resp, err = httpClient.PostForm(p.url, p.data)
 				default:
 					err = ErrUnexpectedMethod
@@ -286,7 +294,7 @@ func (c *Client) pester(p params) (*http.Response, error) {
 				// Early return if we have a valid result
 				// Only retry (ie, continue the loop) on 5xx status codes and 429
 
-				if err == nil && resp.StatusCode < 500 && (resp.StatusCode != 429 || (resp.StatusCode == 429 && !c.RetryOnHTTP429)) {
+				if err == nil && resp.StatusCode < http.StatusInternalServerError && (resp.StatusCode != http.StatusTooManyRequests || (resp.StatusCode == http.StatusTooManyRequests && !c.RetryOnHTTP429)) {
 					multiplexCh <- result{resp: resp, err: err, req: n, retry: i}
 					return
 				}
@@ -417,27 +425,27 @@ func (c *Client) log(ctx context.Context, e ErrEntry) {
 
 // Do provides the same functionality as http.Client.Do
 func (c *Client) Do(req *http.Request) (resp *http.Response, err error) {
-	return c.pester(params{method: "Do", req: req, verb: req.Method, url: req.URL.String()})
+	return c.pester(params{method: methodDo, req: req, verb: req.Method, url: req.URL.String()})
 }
 
 // Get provides the same functionality as http.Client.Get
 func (c *Client) Get(url string) (resp *http.Response, err error) {
-	return c.pester(params{method: "Get", url: url, verb: "GET"})
+	return c.pester(params{method: methodGet, url: url, verb: http.MethodGet})
 }
 
 // Head provides the same functionality as http.Client.Head
 func (c *Client) Head(url string) (resp *http.Response, err error) {
-	return c.pester(params{method: "Head", url: url, verb: "HEAD"})
+	return c.pester(params{method: methodHead, url: url, verb: http.MethodHead})
 }
 
 // Post provides the same functionality as http.Client.Post
 func (c *Client) Post(url string, bodyType string, body io.Reader) (resp *http.Response, err error) {
-	return c.pester(params{method: "Post", url: url, bodyType: bodyType, body: body, verb: "POST"})
+	return c.pester(params{method: methodPost, url: url, bodyType: bodyType, body: body, verb: http.MethodPost})
 }
 
 // PostForm provides the same functionality as http.Client.PostForm
 func (c *Client) PostForm(url string, data url.Values) (resp *http.Response, err error) {
-	return c.pester(params{method: "PostForm", url: url, data: data, verb: "POST"})
+	return c.pester(params{method: methodPostForm, url: url, data: data, verb: http.MethodPost})
 }
 
 // set RetryOnHTTP429 for clients,
