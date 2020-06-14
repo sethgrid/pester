@@ -249,7 +249,7 @@ func (c *Client) pester(p params) (*http.Response, error) {
 	if p.req != nil && p.req.Body != nil && p.body == nil{
 		originalBody, err = c.copyBody(p.req.Body)
 	} else if p.body != nil{
-		originalBody, err = c.copyBody(p.req.Body)
+		originalBody, err = c.copyBody(p.body)
 	}
 
 	switch p.method {
