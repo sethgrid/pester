@@ -18,11 +18,12 @@ import (
 )
 
 const (
-	methodDo       = "Do"
-	methodGet      = "Get"
-	methodHead     = "Head"
-	methodPost     = "Post"
-	headerKeyContentType = "Content-Type"
+	methodDo                  = "Do"
+	methodGet                 = "Get"
+	methodHead                = "Head"
+	methodPost                = "Post"
+	methodPostForm            = "PostForm"
+	headerKeyContentType      = "Content-Type"
 	contentTypeFormURLEncoded = "application/x-www-form-urlencoded"
 )
 
@@ -241,14 +242,14 @@ func (c *Client) pester(p params) (*http.Response, error) {
 
 	// if we have a request body, we need to save it for later
 	var (
-		request *http.Request
+		request      *http.Request
 		originalBody []byte
-		err error
+		err          error
 	)
 
-	if p.req != nil && p.req.Body != nil && p.body == nil{
+	if p.req != nil && p.req.Body != nil && p.body == nil {
 		originalBody, err = c.copyBody(p.req.Body)
-	} else if p.body != nil{
+	} else if p.body != nil {
 		originalBody, err = c.copyBody(p.body)
 	}
 
@@ -256,9 +257,9 @@ func (c *Client) pester(p params) (*http.Response, error) {
 	case methodDo:
 		request = p.req
 	case methodGet:
-		request, err = http.NewRequest(http.MethodGet, p.url, nil)
 	case methodHead:
-		request, err = http.NewRequest(http.MethodHead, p.url, nil)
+		request, err = http.NewRequest(p.verb, p.url, nil)
+	case methodPostForm:
 	case methodPost:
 		request, err = http.NewRequest(http.MethodPost, p.url, ioutil.NopCloser(bytes.NewBuffer(originalBody)))
 	default:
@@ -307,7 +308,7 @@ func (c *Client) pester(p params) (*http.Response, error) {
 					loggingContext,
 					ErrEntry{
 						Time:    time.Now(),
-						Method:  req.Method,
+						Method:  p.method,
 						Verb:    req.Method,
 						URL:     req.URL.String(),
 						Request: n,
@@ -447,7 +448,7 @@ func (c *Client) Post(url string, bodyType string, body io.Reader) (resp *http.R
 
 // PostForm provides the same functionality as http.Client.PostForm
 func (c *Client) PostForm(url string, data url.Values) (resp *http.Response, err error) {
-	return c.pester(params{method: methodPost, url: url, bodyType: contentTypeFormURLEncoded, body: ioutil.NopCloser(strings.NewReader(data.Encode())), verb: http.MethodPost})
+	return c.pester(params{method: methodPostForm, url: url, bodyType: contentTypeFormURLEncoded, body: ioutil.NopCloser(strings.NewReader(data.Encode())), verb: http.MethodPost})
 }
 
 // set RetryOnHTTP429 for clients,
