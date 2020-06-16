@@ -24,7 +24,7 @@ const (
 	methodPost                = "Post"
 	methodPostForm            = "PostForm"
 	headerKeyContentType      = "Content-Type"
-	contentTypeFormURLEncoded = "application/x-www-form-urlencoded"
+	contentTypeFormURLEncoded = "application/x-www-form-urlencoded
 )
 
 //ErrUnexpectedMethod occurs when an http.Client method is unable to be mapped from a calling method in the pester client
@@ -294,7 +294,7 @@ func (c *Client) pester(p params) (*http.Response, error) {
 					return
 				default:
 				}
-
+        
 				resp, err := httpClient.Do(req)
 				// Early return if we have a valid result
 				// Only retry (ie, continue the loop) on 5xx status codes and 429
