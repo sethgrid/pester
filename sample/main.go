@@ -164,15 +164,15 @@ func randoHandler(w http.ResponseWriter, r *http.Request) {
 	var code int
 	switch rand.Intn(10) {
 	case 0:
-		code = 404
+		code = http.StatusNotFound
 	case 1:
-		code = 400
+		code = http.StatusBadRequest
 	case 2:
-		code = 501
+		code = http.StatusNotImplemented
 	case 3:
-		code = 500
+		code = http.StatusInternalServerError
 	default:
-		code = 200
+		code = http.StatusOK
 	}
 
 	log.Printf("incoming request on :9000 - will return %d in %d ms", code, delay)
