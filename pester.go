@@ -335,8 +335,13 @@ func (c *Client) pester(p params) (*http.Response, error) {
 					resp.Body.Close()
 				}
 
+				select {
 				// prevent a 0 from causing the tick to block, pass additional microsecond
-				<-time.After(c.Backoff(i) + 1*time.Microsecond)
+				case <-time.After(c.Backoff(i) + 1*time.Microsecond):
+				// allow context cancellation to cancel during backoff
+				case <-req.Context().Done():
+					return
+				}
 			}
 		}(n, request)
 
