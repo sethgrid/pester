@@ -743,6 +743,72 @@ func TestRetriesNotAttemptedIfContextIsCancelled(t *testing.T) {
 	}
 }
 
+type roundTripperFunc func(r *http.Request) (*http.Response, error)
+
+func (f roundTripperFunc) RoundTrip(r *http.Request) (*http.Response, error) {
+	return f(r)
+}
+
+func TestRetriesContextCancelledDuringWait(t *testing.T) {
+	t.Parallel()
+	// in order for this test to work we need to be able to reliably put the client in a
+	// waiting state. To achieve this, we create a client that will fail fast
+	// via a custom RoundTripper that always fails and pair it with a custom BackoffStrategy
+	// that waits for a long time. This results in a client that should spend
+	// almost all of its time waiting.
+
+	ctx, cancel := context.WithCancel(context.Background())
+
+	c := NewExtendedClient(&http.Client{
+		Transport: roundTripperFunc(func(r *http.Request) (*http.Response, error) {
+			return nil, fmt.Errorf("always fail")
+		}),
+		Timeout: 5 * time.Second,
+	})
+	c.MaxRetries = 2
+	c.Backoff = func(retry int) time.Duration {
+		return 5 * time.Second
+	}
+	// req details don't really matter, round-tripper will fail it anyway
+	req, err := http.NewRequestWithContext(ctx, "GET", "http://localhost", nil)
+	if err != nil {
+		t.Fatalf("unable to create request %v", err)
+	}
+
+	// we want to perform the call in a goroutine so we can explicitly check for indefinite
+	// blocking behaviour. Since you cannot use t.Fatal/t.Error/etc. in a goroutine, we
+	// create a channel to communicate back to our main goroutine what happened
+	errReturn := make(chan error)
+	go func() {
+		// perform call in goroutine to check for indefinite blocks
+		_, err := c.Do(req)
+		errReturn <- err
+	}()
+
+	// wait a hundred ms to let the client fail and get into a waiting state
+	<-time.After(100 * time.Millisecond)
+	// cancel our context
+	cancel()
+
+	// if all has gone well, we should have aborted our wait period and the
+	// err channel should contain a Context-cancellation error
+
+	select {
+	case recdErr := <-errReturn:
+		if recdErr == nil {
+			t.Fatal("nil error returned from Do(req) routine")
+		}
+		// check that it is the right error message
+		if context.Canceled != recdErr {
+			t.Fatalf("unexpected error returned: %v", recdErr)
+		}
+	case <-time.After(time.Second):
+		// give it a second, then treat this as failing to return
+		t.Fatal("failed to receive error return")
+	}
+
+}
+
 func withinEpsilon(got, want int64, epslion float64) bool {
 	if want <= int64(epslion*float64(got)) || want >= int64(epslion*float64(got)) {
 		return false
