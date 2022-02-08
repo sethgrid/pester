@@ -340,6 +340,7 @@ func (c *Client) pester(p params) (*http.Response, error) {
 				case <-time.After(c.Backoff(i) + 1*time.Microsecond):
 				// allow context cancellation to cancel during backoff
 				case <-req.Context().Done():
+					multiplexCh <- result{resp: resp, err: req.Context().Err()}
 					return
 				}
 			}
