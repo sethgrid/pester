@@ -284,13 +284,14 @@ func (c *Client) pester(p params) (*http.Response, error) {
 		case methodDo:
 			if concurrency > 1 {
 				request = p.req.Clone(p.req.Context())
-				if request.Body != nil {
-					// reset the body since Clone() doesn't do that for us
-					// ex: https://go.dev/play/p/jlc6A-fjaOi
-					resetBody(request, originalBody)
-				}
 			} else {
 				request = p.req
+			}
+			if request.Body != nil {
+				// reset the body since Clone() doesn't do that for us
+				// and we drained it earlier when performing the Copy
+				// ex: https://go.dev/play/p/jlc6A-fjaOi
+				resetBody(request, originalBody)
 			}
 		case methodGet, methodHead:
 			request, err = http.NewRequest(p.verb, p.url, nil)
