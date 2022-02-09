@@ -198,6 +198,16 @@ func (c *Client) copyBody(src io.ReadCloser) ([]byte, error) {
 	return b, nil
 }
 
+// resetBody resets the Body and GetBody fields of an http.Request to new Readers over
+// the originalBody. This is used to refresh http.Requests that may have had their
+// bodies closed already.
+func resetBody(request *http.Request, originalBody []byte) {
+	request.Body = io.NopCloser(bytes.NewBuffer(originalBody))
+	request.GetBody = func() (io.ReadCloser, error) {
+		return io.NopCloser(bytes.NewBuffer(originalBody)), nil
+	}
+}
+
 // pester provides all the logic of retries, concurrency, backoff, and logging
 func (c *Client) pester(p params) (*http.Response, error) {
 	resultCh := make(chan result)
@@ -242,7 +252,6 @@ func (c *Client) pester(p params) (*http.Response, error) {
 
 	// if we have a request body, we need to save it for later
 	var (
-		request      *http.Request
 		originalBody []byte
 		err          error
 	)
@@ -252,23 +261,52 @@ func (c *Client) pester(p params) (*http.Response, error) {
 	} else if p.body != nil {
 		originalBody, err = c.copyBody(p.body)
 	}
-
-	switch p.method {
-	case methodDo:
-		request = p.req
-	case methodGet, methodHead:
-		request, err = http.NewRequest(p.verb, p.url, nil)
-	case methodPostForm, methodPost:
-		request, err = http.NewRequest(http.MethodPost, p.url, ioutil.NopCloser(bytes.NewBuffer(originalBody)))
-	default:
-		err = ErrUnexpectedMethod
-	}
 	if err != nil {
 		return nil, err
 	}
 
-	if len(p.bodyType) > 0 {
-		request.Header.Set(headerKeyContentType, p.bodyType)
+	// check to make sure that we aren't trying to use an unsupported method
+	switch p.method {
+	case methodDo, methodGet, methodHead, methodPostForm, methodPost:
+	default:
+		return nil, ErrUnexpectedMethod
+	}
+
+	// provideRequest returns an HTTP request to be use when retrying.
+	// if concurrency is 1, it will return the same request that was supplied to the Do() method
+	// for Do() calls, otherwise it will generate a Clone() of the request each time it is called.
+	// For non-Do() calls, it creates a new request each time it is called. This re-creation behaviour
+	// is because requests are not supposed to be used again until the RoundTripper is finished
+	// with them, which cannot be guaranteed with concurrent callers
+	// https://pkg.go.dev/net/http#RoundTripper
+	provideRequest := func() (request *http.Request, err error) {
+		switch p.method {
+		case methodDo:
+			if concurrency > 1 {
+				request = p.req.Clone(p.req.Context())
+			} else {
+				request = p.req
+			}
+			if request.Body != nil {
+				// reset the body since Clone() doesn't do that for us
+				// and we drained it earlier when performing the Copy
+				// ex: https://go.dev/play/p/jlc6A-fjaOi
+				resetBody(request, originalBody)
+			}
+		case methodGet, methodHead:
+			request, err = http.NewRequest(p.verb, p.url, nil)
+		case methodPostForm, methodPost:
+			request, err = http.NewRequest(http.MethodPost, p.url, bytes.NewBuffer(originalBody))
+		}
+		if err != nil {
+			return
+		}
+
+		if len(p.bodyType) > 0 {
+			request.Header.Set(headerKeyContentType, p.bodyType)
+		}
+
+		return
 	}
 
 	AttemptLimit := c.MaxRetries
@@ -279,9 +317,15 @@ func (c *Client) pester(p params) (*http.Response, error) {
 	for n := 0; n < concurrency; n++ {
 		c.wg.Add(1)
 		totalSentRequests.Add(1)
-		go func(n int, req *http.Request) {
+		go func(n int) {
 			defer c.wg.Done()
 			defer totalSentRequests.Done()
+			req, err := provideRequest()
+			// couldn't get a request to use, so don't proceed
+			if err != nil {
+				multiplexCh <- result{err: err, req: n}
+				return
+			}
 
 			for i := 1; i <= AttemptLimit; i++ {
 				c.wg.Add(1)
@@ -340,15 +384,19 @@ func (c *Client) pester(p params) (*http.Response, error) {
 				case <-time.After(c.Backoff(i) + 1*time.Microsecond):
 				// allow context cancellation to cancel during backoff
 				case <-req.Context().Done():
+					multiplexCh <- result{resp: resp, err: req.Context().Err()}
 					return
 				}
-			}
-		}(n, request)
 
-		// rehydrate the body (it is drained each read)
-		if request.Body != nil {
-			request.Body = ioutil.NopCloser(bytes.NewBuffer(originalBody))
-		}
+				// we are about to retry, if we had a Body, we will need to restore it
+				// to a non-closed one in order to work reliably. If you do not do this,
+				// there are a number of curious edge cases depending on the type of the
+				// underlying reader: https://go.dev/play/p/gZLVUe2EXSE
+				if req.Body != nil {
+					resetBody(req, originalBody)
+				}
+			}
+		}(n)
 	}
 
 	// spin off the go routine so it can continually listen in on late results and close the response bodies
